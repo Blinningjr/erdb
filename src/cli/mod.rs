@@ -46,7 +46,7 @@ pub fn debug_mode(opt: super::Opt) -> Result<()> {
     let debug_sender = sender_to_cli.clone();
 
     let debugger_th = thread::spawn(move || {
-        let mut debugger = DebugHandler::new(Some(opt));
+        let mut debugger = DebugHandler::new(opt);
         debugger.run(debug_sender, debug_receiver).unwrap();
     });
 

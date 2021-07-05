@@ -106,7 +106,7 @@ fn start_debugger_and_adapter<R: Read, W: Write>(reader: BufReader<R>, writer: W
     let (debug_adapter_sender, debugger_receiver): (Sender<DebugRequest>, Receiver<DebugRequest>) = unbounded();
 
     let debugger_th = thread::spawn(move || {
-        let mut debugger = DebugHandler::new(None);
+        let mut debugger = DebugHandler::new_default();
         match debugger.run(debugger_sender, debugger_receiver) {
             Ok(_) => (),
             Err(err) => warn!("DebugThread stoped because of error: {:?}", err),

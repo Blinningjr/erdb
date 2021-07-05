@@ -78,9 +78,17 @@ pub struct Opt {
     #[structopt(short = "v", long = "verbosity", default_value = "Off")]
     verbosity: LevelFilter,
 
-    /// Dwarf file path: only required when `mode` is set to `Debug`
-    #[structopt(name = "FILE", required_if("mode", "Debug"), parse(from_os_str))]
-    file_path: Option<PathBuf>,
+    /// Elf file path
+    #[structopt(short = "elf", long = "elf-file")]
+    elf_file_path: Option<PathBuf>,
+
+    /// Current working direcotry
+    #[structopt(short = "wd", long = "work-directory")]
+    work_directory: Option<String>,
+
+    /// Type of Chip
+    #[structopt(short = "c", long = "chip")]
+    chip: Option<String>,
 
     /// Set Port: only required when `mode` is set to `DebugAdapter`
     #[structopt(short = "p", long = "port", required_if("mode", "DebugAdapter"), default_value = "8800")]

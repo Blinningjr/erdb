@@ -1,4 +1,4 @@
-mod config;
+pub mod config;
 
 use config::Config;
 
@@ -81,9 +81,20 @@ pub struct DebugHandler {
 }
 
 impl DebugHandler {
-    pub fn new(opt: Option<Opt>) -> DebugHandler {
+    pub fn new(opt: Opt) -> DebugHandler {
         DebugHandler {
             config: Config::new(opt),
+        }
+    }
+    
+    pub fn new_default() -> DebugHandler {
+        DebugHandler {
+            config: Config {
+                elf_file_path: None,
+                chip: None,
+                work_directory: None,
+                probe_num: 0,    
+            },
         }
     }
 
@@ -120,7 +131,7 @@ impl DebugHandler {
         match request {
             DebugRequest::Exit => Ok((true, DebugResponse::Exit)),
             DebugRequest::SetBinary { path } => {
-                self.config.binary = Some(path);
+                self.config.elf_file_path = Some(path);
                 Ok((false, DebugResponse::SetBinary))
             },
             DebugRequest::SetProbeNumber { number } => {
@@ -132,7 +143,7 @@ impl DebugHandler {
                 Ok((false, DebugResponse::SetChip))
             },
             DebugRequest::SetCWD { cwd } => {
-                self.config.cwd = Some(cwd);
+                self.config.work_directory = Some(cwd);
                 Ok((false, DebugResponse::SetCWD))
             },
             _ => {
@@ -144,10 +155,10 @@ impl DebugHandler {
 
                 let new_request = init(sender,
                                        reciver,
-                                       self.config.binary.clone().unwrap(),
+                                       self.config.elf_file_path.clone().unwrap(),
                                        self.config.probe_num,
                                        self.config.chip.clone().unwrap(),
-                                       self.config.cwd.clone().unwrap(),
+                                       self.config.work_directory.clone().unwrap(),
                                        request)?;
                 self.handle_request(sender, reciver, new_request)
             },
