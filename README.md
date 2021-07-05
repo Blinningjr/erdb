@@ -1,10 +1,17 @@
 # Embedded Rust Debugger
-The debugger is currently in a very early state thus its usefulness is very low at the moment.
+This is a debugger for embedded rust code.
+It is in an early state so it doesn't work for a lot of different microcontrollers.
+
+This debugger is an example of how my debugging [library](https://github.com/Blinningjr/rust-debug) can be used.
 
 ## Use
 Start by cloning the repository, then use it by running.
 ```
 cargo run <ELF-FILE>
+```
+or
+```
+cargo run -- -m server
 ```
 
 To see the available commands type `help` in the CLI.
