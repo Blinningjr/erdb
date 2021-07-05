@@ -1,5 +1,4 @@
 mod commands;
-mod rust_debug;
 mod debugger;
 mod cli;
 mod debug_adapter;

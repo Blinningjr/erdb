@@ -2,13 +2,13 @@ mod config;
 
 use config::Config;
 
-use crate::rust_debug::evaluate::EvalResult;
-use crate::rust_debug::stack_frame::StackFrame;
-use crate::rust_debug::stack_frame::StackFrameCreator;
-use crate::rust_debug::call_stack::CallFrame;
-use crate::rust_debug::call_stack::CallStackUnwinder;
-use crate::rust_debug::call_stack::UnwindResult;
-use crate::rust_debug::memory_and_registers::MemoryAndRegisters;
+use rust_debug::evaluate::EvalResult;
+use rust_debug::stack_frame::StackFrame;
+use rust_debug::stack_frame::StackFrameCreator;
+use rust_debug::call_stack::CallFrame;
+use rust_debug::call_stack::CallStackUnwinder;
+use rust_debug::call_stack::UnwindResult;
+use rust_debug::memory_and_registers::MemoryAndRegisters;
 
 use gimli::DebugFrame;
 use gimli::Dwarf;
@@ -38,7 +38,7 @@ use crossbeam_channel::{
 use capstone::arch::BuildsCapstone;
 
 
-use super::rust_debug::source_information::find_breakpoint_location;
+use rust_debug::source_information::find_breakpoint_location;
 
 use super::{
     read_dwarf,

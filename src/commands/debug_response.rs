@@ -1,8 +1,8 @@
 use debugserver_types::Breakpoint;
 use probe_rs::CoreStatus;
 
-use crate::rust_debug::stack_frame::StackFrame;
-use crate::rust_debug::variable::Variable;
+use rust_debug::stack_frame::StackFrame;
+use rust_debug::variable::Variable;
 
 
 #[derive(Debug, Clone)]
