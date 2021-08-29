@@ -291,26 +291,26 @@ impl Cli {
         println!("\tline: {:?}, column: {:?}, pc: {:?}",
                  match stack_frame.source.line {
                      Some(l) => l.to_string(),
-                     None => "<unknown>".to_string(),
+                     None => "< unknown >".to_string(),
                  },
                  match stack_frame.source.column {
                      Some(l) => l.to_string(),
-                     None => "<unknown>".to_string(),
+                     None => "< unknown >".to_string(),
                  },
                  stack_frame.call_frame.code_location);
         println!("\tfile: {}, directory: {}",
                  match &stack_frame.source.file {
                      Some(val) => val,
-                     None => "<unknown>",
+                     None => "< unknown >",
                  },
                  match &stack_frame.source.file {
                      Some(val) => val,
-                     None => "<unknown>",
+                     None => "< unknown >",
                  });
 
         for var in &stack_frame.variables {
-            println!("\t{:?} = {:?}",
-                     var.name,
+            println!("\t{} = {}",
+                     match var.name.clone() { Some(n) => n, None => "< unknown >".to_string()},
                      var.value);
         }
         println!("");
@@ -328,7 +328,7 @@ impl Cli {
 
 
     fn handle_variable_response(&self, variable: Variable) {
-        println!("{} = {}", match variable.name { Some(name) => name, None => "<unknown>".to_owned(),}, variable.value);
+        println!("{} = {}", match variable.name { Some(name) => name, None => "< unknown >".to_owned(),}, variable.value);
         match &variable.source {
             Some(source) => {
                 match source.line {
