@@ -9,7 +9,7 @@ use rust_debug::stack_frame::StackFrameCreator;
 use rust_debug::call_stack::CallFrame;
 use rust_debug::call_stack::CallStackUnwinder;
 use rust_debug::call_stack::UnwindResult;
-use rust_debug::memory_and_registers::MemoryAndRegisters;
+use rust_debug::registers::Registers;
 
 use gimli::DebugFrame;
 use gimli::Dwarf;
@@ -196,7 +196,7 @@ pub fn init(sender: &mut Sender<Command>,
         cwd:        cwd,
         check_time: Instant::now(),
         running: true,
-        memory_and_registers: MemoryAndRegisters::new(),
+        registers: Registers::new(),
         stack_trace: None,
     };
 
@@ -214,7 +214,7 @@ struct Debugger<'a, R: Reader<Offset = usize>> {
     cwd:        String,
     check_time: Instant, 
     running: bool,
-    memory_and_registers: MemoryAndRegisters,
+    registers: Registers,
     stack_trace: Option<Vec<StackFrame>>,
 }
 
@@ -266,7 +266,7 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
 
 
     fn clear_temporaries(&mut self) {
-        self.memory_and_registers.clear();
+        self.registers.clear();
         self.stack_trace = None;
     }
 
@@ -784,7 +784,7 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
                                                  self.debug_info.debug_frame,
                                                  my_core,
                                                  &self.cwd,
-                                                 &mut self.memory_and_registers)?;
+                                                 &mut self.registers)?;
         self.stack_trace = Some(stack_trace);
 
         Ok(())
@@ -852,19 +852,19 @@ pub fn get_current_stacktrace<R: Reader<Offset = usize>>(dwarf: & Dwarf<R>,
                                                          debug_frame: & DebugFrame<R>,
                                                          mut core: MyCore, 
                                                          cwd: &str,
-                                                         memory_and_registers: &mut MemoryAndRegisters,
+                                                         registers: &mut Registers,
                                                          ) -> Result<Vec<StackFrame>>
 {
     let pc_reg =   probe_rs::CoreRegisterAddress::from(core.core.registers().program_counter()).0 as usize;
     let link_reg = probe_rs::CoreRegisterAddress::from(core.core.registers().return_address()).0 as usize;
     let sp_reg =   probe_rs::CoreRegisterAddress::from(core.core.registers().stack_pointer()).0 as usize;
  
-//    let mut memory_and_registers = MemoryAndRegisters::new();
-    read_and_add_registers(&mut core.core, memory_and_registers)?;
+//    let mut registers = Registers::new();
+    read_and_add_registers(&mut core.core, registers)?;
 
-    let mut csu = CallStackUnwinder::new(pc_reg, link_reg, sp_reg, memory_and_registers);
+    let mut csu = CallStackUnwinder::new(pc_reg, link_reg, sp_reg, registers);
     loop {
-        match csu.unwind(debug_frame, memory_and_registers, &mut core)? {
+        match csu.unwind(debug_frame, registers, &mut core)? {
             UnwindResult::Complete => break,
             UnwindResult::RequiresAddress { address } => {
                 unreachable!();
@@ -876,7 +876,7 @@ pub fn get_current_stacktrace<R: Reader<Offset = usize>>(dwarf: & Dwarf<R>,
 
     let mut stacktrace = vec!();
     for call_frame in &call_stacktrace {
-        let stack_frame = get_stack_frame(dwarf, &mut core, cwd, memory_and_registers, call_frame.clone())?;
+        let stack_frame = get_stack_frame(dwarf, &mut core, cwd, registers, call_frame.clone())?;
 
         stacktrace.push(stack_frame);
     }
@@ -884,12 +884,12 @@ pub fn get_current_stacktrace<R: Reader<Offset = usize>>(dwarf: & Dwarf<R>,
 }
 
 
-fn get_stack_frame<R: Reader<Offset = usize>>(dwarf: & Dwarf<R>, core: &mut MyCore, cwd: &str, memory_and_registers: &mut MemoryAndRegisters, call_frame: CallFrame) -> Result<StackFrame>
+fn get_stack_frame<R: Reader<Offset = usize>>(dwarf: & Dwarf<R>, core: &mut MyCore, cwd: &str, registers: &mut Registers, call_frame: CallFrame) -> Result<StackFrame>
 {
     let mut sfc = StackFrameCreator::new(call_frame, dwarf, cwd)?;
 
     loop {
-        match sfc.continue_creation(dwarf, memory_and_registers, core, cwd)? {
+        match sfc.continue_creation(dwarf, registers, core, cwd)? {
             EvalResult::Complete => break,
             EvalResult::RequiresRegister { register: _ } => panic!("Skip this variable"),
             EvalResult::RequiresMemory { address, num_words } => {
@@ -902,11 +902,11 @@ fn get_stack_frame<R: Reader<Offset = usize>>(dwarf: & Dwarf<R>, core: &mut MyCo
 }
 
 
-fn read_and_add_registers(core: &mut probe_rs::Core, memory_and_registers: &mut MemoryAndRegisters) -> Result<()> {
+fn read_and_add_registers(core: &mut probe_rs::Core, registers: &mut Registers) -> Result<()> {
     let register_file = core.registers();
     for register in register_file.registers() {
         let value = core.read_core_reg(register)?; 
-        memory_and_registers.add_to_registers(probe_rs::CoreRegisterAddress::from(register).0, value);
+        registers.add_to_registers(probe_rs::CoreRegisterAddress::from(register).0, value);
     }
 
     Ok(())
