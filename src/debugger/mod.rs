@@ -2,8 +2,8 @@ pub mod config;
 
 use config::Config;
 
+use rust_debug::call_stack::unwind_call_stack;
 use rust_debug::call_stack::CallFrame;
-use rust_debug::call_stack::CallStackUnwinder;
 use rust_debug::call_stack::MemoryAccess;
 use rust_debug::evaluate::EvalResult;
 use rust_debug::registers::Registers;
@@ -157,18 +157,33 @@ pub fn init(
     let (owned_dwarf, owned_debug_frame) = read_dwarf(&file_path)?;
     let debug_info = DebugInformation::new(&owned_dwarf, &owned_debug_frame);
 
-    let session = attach_probe(&chip, probe_number)?;
+    let mut session = attach_probe(&chip, probe_number)?;
+
+    let (pc_reg, link_reg, sp_reg) = {
+        let core = session.core(0)?;
+        let pc_reg =
+            probe_rs::CoreRegisterAddress::from(core.registers().program_counter()).0 as usize;
+        let link_reg =
+            probe_rs::CoreRegisterAddress::from(core.registers().return_address()).0 as usize;
+        let sp_reg =
+            probe_rs::CoreRegisterAddress::from(core.registers().stack_pointer()).0 as usize;
+        (pc_reg, link_reg, sp_reg)
+    };
+    let mut registers = Registers::new();
+    registers.program_counter_register = Some(pc_reg);
+    registers.link_register = Some(link_reg);
+    registers.stack_pointer_register = Some(sp_reg);
 
     let mut debugger = Debugger {
         capstone: cs,
-        debug_info: debug_info,
-        session: session,
+        debug_info,
+        session,
         breakpoints: HashMap::new(),
-        file_path: file_path,
-        cwd: cwd,
+        file_path,
+        cwd,
         check_time: Instant::now(),
         running: true,
-        registers: Registers::new(),
+        registers,
         stack_trace: None,
     };
 
@@ -808,20 +823,9 @@ pub fn get_current_stacktrace<R: Reader<Offset = usize>>(
     cwd: &str,
     registers: &mut Registers,
 ) -> Result<Vec<StackFrame>> {
-    let pc_reg =
-        probe_rs::CoreRegisterAddress::from(core.core.registers().program_counter()).0 as usize;
-    let link_reg =
-        probe_rs::CoreRegisterAddress::from(core.core.registers().return_address()).0 as usize;
-    let sp_reg =
-        probe_rs::CoreRegisterAddress::from(core.core.registers().stack_pointer()).0 as usize;
-
-    //    let mut registers = Registers::new();
     read_and_add_registers(&mut core.core, registers)?;
 
-    let mut csu = CallStackUnwinder::new(pc_reg, link_reg, sp_reg, registers);
-    csu.unwind(debug_frame, registers, &mut core)?;
-
-    let call_stacktrace = csu.get_call_stack();
+    let call_stacktrace = unwind_call_stack(registers.clone(), &mut core, debug_frame)?;
 
     let mut stacktrace = vec![];
     for call_frame in &call_stacktrace {
