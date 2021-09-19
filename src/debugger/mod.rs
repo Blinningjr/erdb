@@ -847,7 +847,7 @@ fn get_stack_frame<R: Reader<Offset = usize>>(
 
     //sfc.continue_creation(dwarf, registers, core, cwd)?;
 
-    create_stack_frame(dwarf, call_frame, core, cwd)
+    create_stack_frame(dwarf, call_frame, registers, core, cwd)
     //Ok(sfc.get_stack_frame())
 }
 
