@@ -5,10 +5,10 @@ use config::Config;
 use rust_debug::call_stack::unwind_call_stack;
 use rust_debug::call_stack::CallFrame;
 use rust_debug::call_stack::MemoryAccess;
-use rust_debug::evaluate::EvalResult;
+//use rust_debug::evaluate::EvalResult;
+use rust_debug::call_stack::create_stack_frame;
+use rust_debug::call_stack::StackFrame;
 use rust_debug::registers::Registers;
-use rust_debug::stack_frame::StackFrame;
-use rust_debug::stack_frame::StackFrameCreator;
 
 use gimli::DebugFrame;
 use gimli::Dwarf;
@@ -843,19 +843,12 @@ fn get_stack_frame<R: Reader<Offset = usize>>(
     registers: &mut Registers,
     call_frame: CallFrame,
 ) -> Result<StackFrame> {
-    let mut sfc = StackFrameCreator::new(call_frame, dwarf, cwd)?;
+    //let mut sfc = StackFrameCreator::new(call_frame, dwarf, cwd)?;
 
-    loop {
-        match sfc.continue_creation(dwarf, registers, core, cwd)? {
-            EvalResult::Complete => break,
-            EvalResult::RequiresRegister { register: _ } => panic!("Skip this variable"),
-            EvalResult::RequiresMemory { address, num_words } => {
-                unreachable!();
-            }
-        }
-    }
+    //sfc.continue_creation(dwarf, registers, core, cwd)?;
 
-    Ok(sfc.get_stack_frame())
+    create_stack_frame(dwarf, call_frame, core, cwd)
+    //Ok(sfc.get_stack_frame())
 }
 
 fn read_and_add_registers(core: &mut probe_rs::Core, registers: &mut Registers) -> Result<()> {
