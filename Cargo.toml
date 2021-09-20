@@ -23,6 +23,5 @@ serde			= "1.0"
 capstone		= "0.8"
 crossbeam-channel	= "0.5"
 
-#rust-debug = { git = "https://github.com/Blinningjr/rust-debug.git" }
-rust-debug = { path = "../rust-debug" }
+rust-debug = { git = "https://github.com/Blinningjr/rust-debug.git" }
 
