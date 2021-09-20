@@ -737,19 +737,21 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
         }
 
         Ok(Command::Response(DebugResponse::SetBreakpoints {
-            breakpoints: breakpoints,
+            breakpoints,
         }))
     }
 
     fn set_stack_trace(&mut self) -> Result<()> {
         let mut core = self.session.core(0)?;
-        let mut my_core = MyCore { core: core };
-        let stack_trace = get_current_stacktrace(
+        let mut my_core = MyCore { core };
+
+        read_and_add_registers(&mut my_core.core, &mut self.registers)?;
+        let stack_trace = rust_debug::call_stack::stack_trace(
             self.debug_info.dwarf,
             self.debug_info.debug_frame,
-            my_core,
+            self.registers.clone(),
+            &mut my_core,
             &self.cwd,
-            &mut self.registers,
         )?;
         self.stack_trace = Some(stack_trace);
 
@@ -814,41 +816,6 @@ impl MemoryAccess for MyCore<'_> {
     fn get_register(&mut self, register: &u16) -> Option<u32> {
         unimplemented!();
     }
-}
-
-pub fn get_current_stacktrace<R: Reader<Offset = usize>>(
-    dwarf: &Dwarf<R>,
-    debug_frame: &DebugFrame<R>,
-    mut core: MyCore,
-    cwd: &str,
-    registers: &mut Registers,
-) -> Result<Vec<StackFrame>> {
-    read_and_add_registers(&mut core.core, registers)?;
-
-    let call_stacktrace = unwind_call_stack(registers.clone(), &mut core, debug_frame)?;
-
-    let mut stacktrace = vec![];
-    for call_frame in &call_stacktrace {
-        let stack_frame = get_stack_frame(dwarf, &mut core, cwd, registers, call_frame.clone())?;
-
-        stacktrace.push(stack_frame);
-    }
-    Ok(stacktrace)
-}
-
-fn get_stack_frame<R: Reader<Offset = usize>>(
-    dwarf: &Dwarf<R>,
-    core: &mut MyCore,
-    cwd: &str,
-    registers: &mut Registers,
-    call_frame: CallFrame,
-) -> Result<StackFrame> {
-    //let mut sfc = StackFrameCreator::new(call_frame, dwarf, cwd)?;
-
-    //sfc.continue_creation(dwarf, registers, core, cwd)?;
-
-    create_stack_frame(dwarf, call_frame, registers, core, cwd)
-    //Ok(sfc.get_stack_frame())
 }
 
 fn read_and_add_registers(core: &mut probe_rs::Core, registers: &mut Registers) -> Result<()> {
