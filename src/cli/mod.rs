@@ -1,47 +1,31 @@
-use crossbeam_channel::{ 
-    unbounded,
-    Sender,
-    Receiver,
-};
+use crossbeam_channel::{unbounded, Receiver, Sender};
 
 use std::thread;
 
-use anyhow::{
-    Result,
-};
-
+use anyhow::Result;
 
 use super::{
-    debugger::{
-        DebugHandler,
-    },
     commands::{
-        Command,
-        debug_response::DebugResponse,
-        debug_request::DebugRequest,
-        debug_event::DebugEvent,
-        commands::Commands,
+        commands::Commands, debug_event::DebugEvent, debug_request::DebugRequest,
+        debug_response::DebugResponse, Command,
     },
+    debugger::DebugHandler,
 };
 
-use probe_rs::{
-    CoreStatus,
-    HaltReason,
-};
+use probe_rs::{CoreStatus, HaltReason};
 
 use rustyline::Editor;
 
-use rust_debug::stack_frame::StackFrame;
+use rust_debug::call_stack::StackFrame;
 use rust_debug::variable::Variable;
 
 use debugserver_types::Breakpoint;
 
-
-
 pub fn debug_mode(opt: super::Opt) -> Result<()> {
     let (sender_to_reader, reader_receiver): (Sender<bool>, Receiver<bool>) = unbounded();
     let (sender_to_cli, cli_receiver): (Sender<Command>, Receiver<Command>) = unbounded();
-    let (sender_to_debugger, debug_receiver): (Sender<DebugRequest>, Receiver<DebugRequest>) = unbounded();
+    let (sender_to_debugger, debug_receiver): (Sender<DebugRequest>, Receiver<DebugRequest>) =
+        unbounded();
 
     let debug_sender = sender_to_cli.clone();
 
@@ -53,7 +37,6 @@ pub fn debug_mode(opt: super::Opt) -> Result<()> {
     let reader_th = thread::spawn(move || {
         command_reader(sender_to_cli, reader_receiver).unwrap();
     });
-    
 
     let mut cli = Cli::new(sender_to_debugger, cli_receiver, sender_to_reader);
     cli.run()?;
@@ -64,12 +47,8 @@ pub fn debug_mode(opt: super::Opt) -> Result<()> {
     Ok(())
 }
 
-
-fn command_reader(sender: Sender<Command>,
-                  receiver: Receiver<bool>
-                  ) -> Result <()>
-{
-    let mut rl = Editor::<()>::new(); 
+fn command_reader(sender: Sender<Command>, receiver: Receiver<bool>) -> Result<()> {
+    let mut rl = Editor::<()>::new();
     let cmd_parser = Commands::new();
 
     loop {
@@ -86,25 +65,25 @@ fn command_reader(sender: Sender<Command>,
                 } else if &line == "" {
                     continue;
                 }
-    
+
                 let request = match cmd_parser.parse_command(line.as_ref()) {
                     Ok(cmd) => cmd,
                     Err(err) => {
                         println!("Error: {:?}", err);
                         continue;
-                    },
+                    }
                 };
 
                 sender.send(request)?;
                 let exit = receiver.recv()?;
 
                 if exit {
-                        return Ok(());
+                    return Ok(());
                 }
             }
             Err(e) => {
                 use rustyline::error::ReadlineError;
-    
+
                 match e {
                     // For end of file and ctrl-c, we just quit
                     ReadlineError::Eof | ReadlineError::Interrupted => return Ok(()),
@@ -119,26 +98,24 @@ fn command_reader(sender: Sender<Command>,
     }
 }
 
-
 struct Cli {
-    debug_sender:   Sender<DebugRequest>,
-    receiver:       Receiver<Command>,
-    cli_sender:     Sender<bool>,
+    debug_sender: Sender<DebugRequest>,
+    receiver: Receiver<Command>,
+    cli_sender: Sender<bool>,
 }
 
 impl Cli {
-    pub fn new(debug_sender: Sender<DebugRequest>,
-               receiver: Receiver<Command>,
-               cli_sender: Sender<bool>
-               ) -> Cli
-    {
+    pub fn new(
+        debug_sender: Sender<DebugRequest>,
+        receiver: Receiver<Command>,
+        cli_sender: Sender<bool>,
+    ) -> Cli {
         Cli {
             debug_sender: debug_sender,
             receiver: receiver,
             cli_sender: cli_sender,
         }
     }
-
 
     pub fn run(&mut self) -> Result<()> {
         loop {
@@ -148,13 +125,12 @@ impl Cli {
                     self.cli_sender.send(exit)?;
                     if exit {
                         return Ok(());
-                    } 
-                },
+                    }
+                }
                 None => (),
             };
         }
     }
-
 
     fn handle_command(&mut self, command: Command) -> Result<Option<bool>> {
         match command {
@@ -166,18 +142,19 @@ impl Cli {
         Ok(None)
     }
 
-
     fn handle_event(&mut self, event: DebugEvent) {
         match event {
-            DebugEvent::Halted { pc, reason, hit_breakpoint_ids: _ } => self.handle_halted_event(pc, reason),
+            DebugEvent::Halted {
+                pc,
+                reason,
+                hit_breakpoint_ids: _,
+            } => self.handle_halted_event(pc, reason),
         };
     }
-    
 
     fn handle_halted_event(&self, pc: u32, reason: HaltReason) {
         println!("Core halted a pc: {}, because: {:?}", pc, reason);
     }
-
 
     fn handle_response(&mut self, response: DebugResponse) -> Result<bool> {
         //println!("{:?}", response);
@@ -193,30 +170,35 @@ impl Cli {
             DebugResponse::Flash => self.handle_flash_response(),
             DebugResponse::Reset => self.handle_reset_response(),
             DebugResponse::Read { address, value } => self.handle_read_response(address, value),
-            DebugResponse::StackTrace { stack_trace } => self.handle_stack_trace_response(stack_trace),
+            DebugResponse::StackTrace { stack_trace } => {
+                self.handle_stack_trace_response(stack_trace)
+            }
             DebugResponse::SetProbeNumber => self.handle_set_probe_number_response(),
             DebugResponse::SetChip => self.handle_set_chip_response(),
             DebugResponse::Variable { variable } => self.handle_variable_response(variable),
             DebugResponse::Variables { variables } => self.handle_variables_response(variables),
             DebugResponse::Registers { registers } => self.handle_registers_response(registers),
             DebugResponse::SetBreakpoint => self.handle_set_breakpoint_response(),
-            DebugResponse::SetBreakpoints { breakpoints } => self.handle_set_breakpoints_response(breakpoints),
+            DebugResponse::SetBreakpoints { breakpoints } => {
+                self.handle_set_breakpoints_response(breakpoints)
+            }
             DebugResponse::ClearBreakpoint => self.handle_clear_breakpoint_response(),
             DebugResponse::ClearAllBreakpoints => self.handle_clear_all_breakpoints_response(),
             DebugResponse::Code { pc, instructions } => self.handle_code_response(pc, instructions),
-            DebugResponse::Stack { stack_pointer, stack } => self.handle_stack_response(stack_pointer, stack),
+            DebugResponse::Stack {
+                stack_pointer,
+                stack,
+            } => self.handle_stack_response(stack_pointer, stack),
             DebugResponse::Error { message } => self.handle_error_response(message),
             DebugResponse::SetCWD => self.handle_set_cwd_response(),
         };
-        
+
         Ok(false)
     }
-
 
     fn handle_attach_response(&self) {
         println!("Debugger attached successfully");
     }
-
 
     fn handle_status_response(&self, status: CoreStatus, pc: Option<u32>) {
         println!("Status: {:?}", &status);
@@ -225,38 +207,32 @@ impl Cli {
         }
     }
 
-
     fn handle_continue_response(&self) {
         println!("Core is running");
     }
 
-
     fn handle_step_response(&self) {
-        return (); 
+        return ();
     }
-
 
     fn handle_halt_response(&self) {
         return ();
     }
 
-
     fn handle_set_binary_response(&self) {
-        println!("Binary file path set "); 
+        println!("Binary file path set ");
     }
-
 
     fn handle_flash_response(&self) {
         println!("Flash successful");
     }
 
-
     fn handle_reset_response(&self) {
         println!("Target reset");
     }
 
-
-    fn handle_read_response(&self, address: u32, value: Vec<u8>) { // TODO
+    fn handle_read_response(&self, address: u32, value: Vec<u8>) {
+        // TODO
         let mut value_string = "".to_owned();
 
         let address_string = format!("0x{:08x}:", address);
@@ -266,7 +242,8 @@ impl Cli {
         }
 
         let mut i = 0;
-        for val in value { // TODO: print in right order.
+        for val in value {
+            // TODO: print in right order.
             if i == 4 {
                 value_string = format!("{}\n\t{} {:02x}", value_string, spacer, val);
                 i = 0;
@@ -278,7 +255,6 @@ impl Cli {
         println!("\t{}{}", address_string, value_string);
     }
 
-
     fn handle_stack_trace_response(&self, stack_trace: Vec<StackFrame>) {
         println!("\nStack Trace:");
         for sf in &stack_trace {
@@ -288,47 +264,60 @@ impl Cli {
 
     fn print_stack_frame(&self, stack_frame: &StackFrame) {
         println!("\tName: {}", stack_frame.name);
-        println!("\tline: {:?}, column: {:?}, pc: {:?}",
-                 match stack_frame.source.line {
-                     Some(l) => l.to_string(),
-                     None => "< unknown >".to_string(),
-                 },
-                 match stack_frame.source.column {
-                     Some(l) => l.to_string(),
-                     None => "< unknown >".to_string(),
-                 },
-                 stack_frame.call_frame.code_location);
-        println!("\tfile: {}, directory: {}",
-                 match &stack_frame.source.file {
-                     Some(val) => val,
-                     None => "< unknown >",
-                 },
-                 match &stack_frame.source.file {
-                     Some(val) => val,
-                     None => "< unknown >",
-                 });
+        println!(
+            "\tline: {:?}, column: {:?}, pc: {:?}",
+            match stack_frame.source.line {
+                Some(l) => l.to_string(),
+                None => "< unknown >".to_string(),
+            },
+            match stack_frame.source.column {
+                Some(l) => l.to_string(),
+                None => "< unknown >".to_string(),
+            },
+            stack_frame.call_frame.code_location
+        );
+        println!(
+            "\tfile: {}, directory: {}",
+            match &stack_frame.source.file {
+                Some(val) => val,
+                None => "< unknown >",
+            },
+            match &stack_frame.source.file {
+                Some(val) => val,
+                None => "< unknown >",
+            }
+        );
 
         for var in &stack_frame.variables {
-            println!("\t{} = {}",
-                     match var.name.clone() { Some(n) => n, None => "< unknown >".to_string()},
-                     var.value);
+            println!(
+                "\t{} = {}",
+                match var.name.clone() {
+                    Some(n) => n,
+                    None => "< unknown >".to_string(),
+                },
+                var.value
+            );
         }
         println!("");
     }
 
-
     fn handle_set_probe_number_response(&self) {
-        println!("Probe number set "); 
+        println!("Probe number set ");
     }
-
 
     fn handle_set_chip_response(&self) {
-        println!("Chip set"); 
+        println!("Chip set");
     }
 
-
     fn handle_variable_response(&self, variable: Variable) {
-        println!("{} = {}", match variable.name { Some(name) => name, None => "< unknown >".to_owned(),}, variable.value);
+        println!(
+            "{} = {}",
+            match variable.name {
+                Some(name) => name,
+                None => "< unknown >".to_owned(),
+            },
+            variable.value
+        );
         match &variable.source {
             Some(source) => {
                 match source.line {
@@ -338,7 +327,7 @@ impl Cli {
                             Some(column) => println!("\tcolumn: {}", column),
                             None => (),
                         };
-                    },
+                    }
                     None => (),
                 };
                 match &source.file {
@@ -348,15 +337,14 @@ impl Cli {
                             Some(dir) => println!("\tdirectory: {}", dir),
                             None => (),
                         };
-                    },
+                    }
                     None => (),
                 };
-            },
+            }
             None => (),
         };
         println!("Location: {:?}", variable.location);
     }
-
 
     fn handle_variables_response(&self, variables: Vec<Variable>) {
         println!("Local variables:");
@@ -365,7 +353,6 @@ impl Cli {
         }
     }
 
-
     fn handle_registers_response(&self, registers: Vec<(String, u32)>) {
         println!("Registers:");
         for (name, value) in &registers {
@@ -373,26 +360,21 @@ impl Cli {
         }
     }
 
-
     fn handle_set_breakpoint_response(&self) {
         println!("Breakpoint set");
     }
-
 
     fn handle_set_breakpoints_response(&self, _breakpoints: Vec<Breakpoint>) {
         unreachable!();
     }
 
-
     fn handle_clear_breakpoint_response(&self) {
         println!("Breakpoint cleared");
     }
 
-
     fn handle_clear_all_breakpoints_response(&self) {
         println!("All hardware breakpoints cleared");
     }
-
 
     fn handle_code_response(&self, pc: u32, instructions: Vec<(u32, String)>) {
         println!("Assembly Code");
@@ -405,22 +387,22 @@ impl Cli {
         }
     }
 
-
     fn handle_stack_response(&self, stack_pointer: u32, stack: Vec<u32>) {
         println!("Current stack value:");
         for i in 0..stack.len() {
-            println!("\t{:#010x}: {:#010x}", stack_pointer as usize + i*4, stack[i]);
+            println!(
+                "\t{:#010x}: {:#010x}",
+                stack_pointer as usize + i * 4,
+                stack[i]
+            );
         }
     }
-
 
     fn handle_error_response(&self, message: String) {
         println!("Error: {}", message);
     }
 
-
     fn handle_set_cwd_response(&self) {
         println!("Current work directory set");
     }
 }
-
