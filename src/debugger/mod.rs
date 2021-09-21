@@ -813,9 +813,6 @@ impl MemoryAccess for MyCore<'_> {
         };
         Some(buff)
     }
-    fn get_register(&mut self, register: &u16) -> Option<u32> {
-        unimplemented!();
-    }
 }
 
 fn read_and_add_registers(core: &mut probe_rs::Core, registers: &mut Registers) -> Result<()> {
