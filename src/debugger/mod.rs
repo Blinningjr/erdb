@@ -2,13 +2,10 @@ pub mod config;
 
 use config::Config;
 
-use rust_debug::call_stack::unwind_call_stack;
-use rust_debug::call_stack::CallFrame;
-use rust_debug::call_stack::MemoryAccess;
-//use rust_debug::evaluate::EvalResult;
-use rust_debug::call_stack::create_stack_frame;
-use rust_debug::call_stack::StackFrame;
+use rust_debug::call_stack::{CallFrame, MemoryAccess};
+use rust_debug::evaluate::evaluate::EvaluatorValue;
 use rust_debug::registers::Registers;
+use rust_debug::source_information::{find_breakpoint_location, SourceInformation};
 
 use gimli::DebugFrame;
 use gimli::Dwarf;
@@ -19,30 +16,17 @@ use super::commands::{
 };
 
 use super::Opt;
-
-use anyhow::{anyhow, Context, Result};
-
-use crossbeam_channel::{Receiver, Sender, TryRecvError};
-
-use capstone::arch::BuildsCapstone;
-
-use rust_debug::source_information::find_breakpoint_location;
-
 use super::{attach_probe, read_dwarf};
-
-use std::path::PathBuf;
-
-use probe_rs::{CoreStatus, MemoryInterface};
-
-use log::{info, warn};
-
-use std::time::{Duration, Instant};
-
-use probe_rs::flashing::{download_file, Format};
-
+use anyhow::{anyhow, Context, Result};
+use capstone::arch::BuildsCapstone;
+use crossbeam_channel::{Receiver, Sender, TryRecvError};
 use debugserver_types::{Breakpoint, SourceBreakpoint};
-
+use log::{info, warn};
+use probe_rs::flashing::{download_file, Format};
+use probe_rs::{CoreStatus, MemoryInterface};
 use std::collections::HashMap;
+use std::path::PathBuf;
+use std::time::{Duration, Instant};
 
 pub struct DebugHandler {
     config: Config,
@@ -753,7 +737,7 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
             &mut my_core,
             &self.cwd,
         )?;
-        self.stack_trace = Some(stack_trace);
+        self.stack_trace = Some(resolve_stack_trace(stack_trace)?);
 
         Ok(())
     }
@@ -825,6 +809,7 @@ fn read_and_add_registers(core: &mut probe_rs::Core, registers: &mut Registers) 
     Ok(())
 }
 
+#[derive(Debug, Clone)]
 pub struct DebugInformation<'a, R: Reader<Offset = usize>> {
     pub dwarf: &'a Dwarf<R>,
     pub debug_frame: &'a DebugFrame<R>,
@@ -839,4 +824,153 @@ impl<'a, R: Reader<Offset = usize>> DebugInformation<'a, R> {
             breakpoints: vec![],
         }
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct Variable {
+    pub name: Option<String>,
+    pub value: String,
+    pub type_: String,
+    pub source: Option<SourceInformation>,
+    pub children: Vec<Variable>,
+}
+
+impl Variable {
+    pub fn resolve_varialbe<R: Reader<Offset = usize>>(
+        var: &rust_debug::variable::Variable<R>,
+    ) -> Result<Variable> {
+        let mut variable = Variable {
+            name: var.name.clone(),
+            value: "This should be overwritten with the correct value".to_string(),
+            type_: "".to_owned(),
+            source: var.source.clone(),
+            children: vec![],
+        };
+
+        variable.evaluate(&var.value, &var.source)?;
+
+        return Ok(variable);
+    }
+
+    fn evaluate<R: Reader<Offset = usize>>(
+        &mut self,
+        value: &EvaluatorValue<R>,
+        source: &Option<SourceInformation>,
+    ) -> Result<()> {
+        match value {
+            EvaluatorValue::Value(val, _) => {
+                self.value = format!("{}", val);
+                self.type_ = format!("{}::{}", self.type_, val.get_type());
+            }
+            EvaluatorValue::PointerTypeValue(pointer_type) => {
+                match &pointer_type.name {
+                    Some(name) => self.type_ = format!("{}::{}", self.type_, name),
+                    None => (),
+                };
+                self.evaluate(&pointer_type.value, source)?;
+            }
+            EvaluatorValue::VariantValue(variant_value) => {
+                let mut variable = Variable {
+                    name: Some("< Variant >".to_owned()),
+                    value: match variant_value.discr_value {
+                        Some(val) => format!("{}", val),
+                        None => "< OptimizedOut >".to_owned(),
+                    },
+                    type_: "u64".to_string(),
+                    source: source.clone(),
+                    children: vec![],
+                };
+                variable.evaluate(
+                    &EvaluatorValue::Member(Box::new(variant_value.child.clone())),
+                    source,
+                )?;
+                self.children.push(variable);
+            }
+            EvaluatorValue::VariantPartValue(variant_part) => {
+                match &variant_part.variant {
+                    Some(variant) => {
+                        self.evaluate(&EvaluatorValue::Member(Box::new(variant.clone())), source)?;
+                    }
+                    None => {
+                        let variable = Variable {
+                            name: Some("< Variant >".to_owned()),
+                            value: "< OptimizedOut >".to_owned(),
+                            type_: "u64".to_string(),
+                            source: source.clone(),
+                            children: vec![],
+                        };
+                        self.children.push(variable);
+                    }
+                };
+                for variant_value in &variant_part.variants {
+                    self.evaluate(
+                        &EvaluatorValue::VariantValue(Box::new(variant_value.clone())),
+                        source,
+                    )?;
+                }
+            }
+            //EvaluatorValue::SubrangeTypeValue(_) => unimplemented!(),
+            //EvaluatorValue::Bytes(_) => unimplemented!(),
+            //EvaluatorValue::Array(_) => unimplemented!(),
+            //EvaluatorValue::Struct(_) => unimplemented!(),
+            //EvaluatorValue::Enum(_) => unimplemented!(),
+            //EvaluatorValue::Union(_) => unimplemented!(),
+            //EvaluatorValue::Member(_) => unimplemented!(),
+            EvaluatorValue::OptimizedOut => self.value = "< OptimizedOut >".to_string(),
+            EvaluatorValue::LocationOutOfRange => self.value = "< LocationOutOfRange >".to_string(),
+            EvaluatorValue::ZeroSize => self.value = "< OptimizedOut >".to_string(),
+            _ => (),
+        };
+        return Ok(());
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct StackFrame {
+    pub name: String,
+    pub call_frame: CallFrame,
+    pub source: SourceInformation,
+    pub variables: Vec<Variable>,
+}
+
+impl StackFrame {
+    pub fn resolve_stackframe<R: Reader<Offset = usize>>(
+        frame: &rust_debug::call_stack::StackFrame<R>,
+    ) -> Result<StackFrame> {
+        let mut variables = vec![];
+        for var in &frame.variables {
+            variables.push(Variable::resolve_varialbe(var)?);
+        }
+
+        Ok(StackFrame {
+            name: frame.name.clone(),
+            call_frame: frame.call_frame.clone(),
+            source: frame.source.clone(),
+            variables,
+        })
+    }
+
+    pub fn find_variable(&self, name: &str) -> Option<&Variable> {
+        for v in &self.variables {
+            match &v.name {
+                Some(var_name) => {
+                    if *var_name == name {
+                        return Some(v);
+                    }
+                }
+                None => (),
+            };
+        }
+        return None;
+    }
+}
+
+pub fn resolve_stack_trace<R: Reader<Offset = usize>>(
+    stack_frames: Vec<rust_debug::call_stack::StackFrame<R>>,
+) -> Result<Vec<StackFrame>> {
+    let mut stack_trace = vec![];
+    for sf in &stack_frames {
+        stack_trace.push(StackFrame::resolve_stackframe(sf)?);
+    }
+    Ok(stack_trace)
 }

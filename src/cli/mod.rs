@@ -1,9 +1,3 @@
-use crossbeam_channel::{unbounded, Receiver, Sender};
-
-use std::thread;
-
-use anyhow::Result;
-
 use super::{
     commands::{
         commands::Commands, debug_event::DebugEvent, debug_request::DebugRequest,
@@ -11,15 +5,14 @@ use super::{
     },
     debugger::DebugHandler,
 };
-
-use probe_rs::{CoreStatus, HaltReason};
-
-use rustyline::Editor;
-
-use rust_debug::call_stack::StackFrame;
-use rust_debug::variable::Variable;
-
+use crate::debugger::StackFrame;
+use crate::debugger::Variable;
+use anyhow::Result;
+use crossbeam_channel::{unbounded, Receiver, Sender};
 use debugserver_types::Breakpoint;
+use probe_rs::{CoreStatus, HaltReason};
+use rustyline::Editor;
+use std::thread;
 
 pub fn debug_mode(opt: super::Opt) -> Result<()> {
     let (sender_to_reader, reader_receiver): (Sender<bool>, Receiver<bool>) = unbounded();
@@ -343,7 +336,7 @@ impl Cli {
             }
             None => (),
         };
-        println!("Location: {:?}", variable.location);
+        //println!("Location: {:?}", variable.location);
     }
 
     fn handle_variables_response(&self, variables: Vec<Variable>) {

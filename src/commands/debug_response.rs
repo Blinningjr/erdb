@@ -1,8 +1,7 @@
+use crate::debugger::StackFrame;
+use crate::debugger::Variable;
 use debugserver_types::Breakpoint;
 use probe_rs::CoreStatus;
-
-use rust_debug::call_stack::StackFrame;
-use rust_debug::variable::Variable;
 
 #[derive(Debug, Clone)]
 pub enum DebugResponse {
