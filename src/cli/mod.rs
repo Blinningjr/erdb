@@ -282,14 +282,7 @@ impl Cli {
         );
 
         for var in &stack_frame.variables {
-            println!(
-                "\t{} = {}",
-                match var.name.clone() {
-                    Some(n) => n,
-                    None => "< unknown >".to_string(),
-                },
-                var.value
-            );
+            println!("\t{}", self.variable_value_to_string(var));
         }
         println!("");
     }
@@ -303,14 +296,7 @@ impl Cli {
     }
 
     fn handle_variable_response(&self, variable: Variable) {
-        println!(
-            "{} = {}",
-            match variable.name {
-                Some(name) => name,
-                None => "< unknown >".to_owned(),
-            },
-            variable.value
-        );
+        println!("\t{}", self.variable_value_to_string(&variable));
         match &variable.source {
             Some(source) => {
                 match source.line {
@@ -337,6 +323,23 @@ impl Cli {
             None => (),
         };
         //println!("Location: {:?}", variable.location);
+    }
+
+    fn variable_value_to_string(&self, variable: &Variable) -> String {
+        let mut result;
+        match &variable.name {
+            Some(name) => result = format!("{} = {}", name, variable.value),
+            None => result = format!("{}", variable.value),
+        };
+
+        if variable.children.len() > 0 {
+            result = format!("{} {{", result);
+            for child in &variable.children {
+                result = format!("{} {},", result, self.variable_value_to_string(child));
+            }
+            result = format!("{} }}", result);
+        }
+        result
     }
 
     fn handle_variables_response(&self, variables: Vec<Variable>) {

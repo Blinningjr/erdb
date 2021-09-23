@@ -3,7 +3,7 @@ pub mod config;
 use config::Config;
 
 use rust_debug::call_stack::{CallFrame, MemoryAccess};
-use rust_debug::evaluate::evaluate::EvaluatorValue;
+use rust_debug::evaluate::evaluate::{get_udata, EvaluatorValue};
 use rust_debug::registers::Registers;
 use rust_debug::source_information::{find_breakpoint_location, SourceInformation};
 
@@ -470,9 +470,7 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
             registers.push((format!("{}", register.name()), value));
         }
 
-        Ok(Command::Response(DebugResponse::Registers {
-            registers: registers,
-        }))
+        Ok(Command::Response(DebugResponse::Registers { registers }))
     }
 
     fn variable_command(&mut self, name: &str) -> Result<Command> {
@@ -488,12 +486,14 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
                     }
                     let variable = match stack_trace[0].find_variable(name) {
                         Some(var) => var.clone(),
-                        None => return Err(anyhow!("Variable {:?} not found", name)),
+                        None => {
+                            return Ok(Command::Response(DebugResponse::Error {
+                                message: format!("Variable {:?} not found", name),
+                            }))
+                        }
                     };
 
-                    Ok(Command::Response(DebugResponse::Variable {
-                        variable: variable,
-                    }))
+                    Ok(Command::Response(DebugResponse::Variable { variable }))
                 }
                 None => {
                     self.set_stack_trace()?;
@@ -819,8 +819,8 @@ pub struct DebugInformation<'a, R: Reader<Offset = usize>> {
 impl<'a, R: Reader<Offset = usize>> DebugInformation<'a, R> {
     pub fn new(dwarf: &'a Dwarf<R>, debug_frame: &'a DebugFrame<R>) -> DebugInformation<'a, R> {
         DebugInformation {
-            dwarf: dwarf,
-            debug_frame: debug_frame,
+            dwarf,
+            debug_frame,
             breakpoints: vec![],
         }
     }
@@ -871,7 +871,7 @@ impl Variable {
             }
             EvaluatorValue::VariantValue(variant_value) => {
                 let mut variable = Variable {
-                    name: Some("< Variant >".to_owned()),
+                    name: None, // Some("< Variant >".to_owned()),
                     value: match variant_value.discr_value {
                         Some(val) => format!("{}", val),
                         None => "< OptimizedOut >".to_owned(),
@@ -890,16 +890,22 @@ impl Variable {
                 match &variant_part.variant {
                     Some(variant) => {
                         self.evaluate(&EvaluatorValue::Member(Box::new(variant.clone())), source)?;
+                        let mut child = self.children.pop().ok_or(anyhow!("Error"))?;
+                        match &child.name {
+                            Some(_) => (),
+                            None => child.name = Some("< Variant >".to_owned()),
+                        };
+                        self.children.push(child);
                     }
                     None => {
-                        let variable = Variable {
-                            name: Some("< Variant >".to_owned()),
-                            value: "< OptimizedOut >".to_owned(),
-                            type_: "u64".to_string(),
-                            source: source.clone(),
-                            children: vec![],
-                        };
-                        self.children.push(variable);
+                        //let variable = Variable {
+                        //    name: Some("< Variant >".to_owned()),
+                        //    value: "< OptimizedOut >".to_owned(),
+                        //    type_: "u64".to_string(),
+                        //    source: source.clone(),
+                        //    children: vec![],
+                        //};
+                        //self.children.push(variable);
                     }
                 };
                 for variant_value in &variant_part.variants {
@@ -909,17 +915,119 @@ impl Variable {
                     )?;
                 }
             }
-            //EvaluatorValue::SubrangeTypeValue(_) => unimplemented!(),
-            //EvaluatorValue::Bytes(_) => unimplemented!(),
-            //EvaluatorValue::Array(_) => unimplemented!(),
-            //EvaluatorValue::Struct(_) => unimplemented!(),
-            //EvaluatorValue::Enum(_) => unimplemented!(),
-            //EvaluatorValue::Union(_) => unimplemented!(),
-            //EvaluatorValue::Member(_) => unimplemented!(),
+            EvaluatorValue::SubrangeTypeValue(subrange_type_value) => {
+                match subrange_type_value.count {
+                    Some(count) => {
+                        let variable = Variable {
+                            name: Some("< Length >".to_owned()),
+                            value: format!("{}", count),
+                            type_: "u64".to_owned(),
+                            source: source.clone(),
+                            children: vec![],
+                        };
+                        self.children.push(variable);
+                    }
+                    None => {
+                        match subrange_type_value.base_type_value.clone() {
+                            Some((base_type_value, loc)) => {
+                                let mut variable = Variable {
+                                    name: Some("< Length >".to_owned()),
+                                    value: "".to_owned(),
+                                    type_: "".to_owned(),
+                                    source: source.clone(),
+                                    children: vec![],
+                                };
+                                variable.evaluate(
+                                    &EvaluatorValue::<R>::Value(base_type_value, loc),
+                                    source,
+                                )?;
+                                self.children.push(variable);
+                            }
+                            None => {
+                                //let variable = Variable {
+                                //    name: Some("< Length >".to_owned()),
+                                //    value: "< OptimizedOut >".to_owned(),
+                                //    type_: "u64".to_owned(),
+                                //    source: source.clone(),
+                                //    children: vec![],
+                                //};
+                                //self.children.push(variable);
+                            }
+                        };
+                    }
+                };
+            }
+            EvaluatorValue::Bytes(bt) => {
+                self.value = format!("{:?}", bt);
+                self.type_ = format!("{}::{}", self.type_, "< Bytes >");
+            }
+            EvaluatorValue::Array(array_type_value) => {
+                self.value = "".to_owned();
+                self.evaluate(
+                    &EvaluatorValue::<R>::SubrangeTypeValue(
+                        array_type_value.subrange_type_value.clone(),
+                    ),
+                    source,
+                )?;
+                for i in 0..array_type_value.values.len() {
+                    let mut variable = Variable {
+                        name: Some(format!("__{}", i)),
+                        value: "< OptimizedOut >".to_owned(),
+                        type_: "".to_owned(),
+                        source: source.clone(),
+                        children: vec![],
+                    };
+                    variable.evaluate(&array_type_value.values[i], source)?;
+                    self.children.push(variable);
+                }
+            }
+            EvaluatorValue::Struct(structure_type_value) => {
+                self.type_ = format!("{}::{}", self.type_, structure_type_value.name.clone());
+                self.value = structure_type_value.name.clone();
+
+                for member in &structure_type_value.members {
+                    self.evaluate(member, source)?;
+                }
+            }
+            EvaluatorValue::Enum(enumeration_type_value) => {
+                self.name = Some(enumeration_type_value.name.clone());
+                self.type_ = format!("{}::{}", self.type_, enumeration_type_value.name.clone());
+                self.value = "< OptimizedOut >".to_owned();
+                match &enumeration_type_value.variant {
+                    EvaluatorValue::Value(base_type_value, _) => {
+                        let variant = get_udata(base_type_value.clone());
+                        for enu in &enumeration_type_value.enumerators {
+                            if enu.const_value == variant {
+                                match &enu.name {
+                                    Some(name) => self.value = name.clone(),
+                                    None => (),
+                                };
+                            }
+                        }
+                    }
+                    _ => unimplemented!(),
+                };
+            }
+            EvaluatorValue::Union(union_type_value) => {
+                self.type_ = format!("{}::{}", self.type_, union_type_value.name);
+                for member in &union_type_value.members {
+                    self.evaluate(member, source)?;
+                }
+            }
+            EvaluatorValue::Member(member_value) => {
+                let mut variable = Variable {
+                    name: member_value.name.clone(),
+                    value: "< OptimizedOut >".to_owned(),
+                    type_: "".to_owned(),
+                    source: source.clone(),
+                    children: vec![],
+                };
+                variable.evaluate(&member_value.value, source)?;
+                self.children.push(variable);
+            }
             EvaluatorValue::OptimizedOut => self.value = "< OptimizedOut >".to_string(),
             EvaluatorValue::LocationOutOfRange => self.value = "< LocationOutOfRange >".to_string(),
             EvaluatorValue::ZeroSize => self.value = "< OptimizedOut >".to_string(),
-            _ => (),
         };
         return Ok(());
     }
