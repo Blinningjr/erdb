@@ -580,7 +580,7 @@ impl<R: Read, W: Write> DebugAdapter<R, W> {
                     named_variables: None,
                     presentation_hint: None,
                     type_: Some(var.type_.clone()),
-                    value: var.value.clone(),
+                    value: var.value_to_string(),
                     variables_reference: 0, // i64,
                 });
             }

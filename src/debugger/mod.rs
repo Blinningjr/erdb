@@ -726,7 +726,7 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
     }
 
     fn set_stack_trace(&mut self) -> Result<()> {
-        let mut core = self.session.core(0)?;
+        let core = self.session.core(0)?;
         let mut my_core = MyCore { core };
 
         read_and_add_registers(&mut my_core.core, &mut self.registers)?;
@@ -836,6 +836,24 @@ pub struct Variable {
 }
 
 impl Variable {
+    pub fn value_to_string(&self) -> String {
+        let mut result;
+        match &self.name {
+            Some(name) => result = format!("{} = {}", name, self.value),
+            None => result = format!("{}", self.value),
+        };
+
+        if self.children.len() > 0 {
+            result = format!("{} {{", result);
+            for child in &self.children {
+                result = format!("{} {},", result, child.value_to_string());
+            }
+            result = format!("{} }}", result);
+        }
+        result
+
+    }
+
     pub fn resolve_varialbe<R: Reader<Offset = usize>>(
         var: &rust_debug::variable::Variable<R>,
     ) -> Result<Variable> {
