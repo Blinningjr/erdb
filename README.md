@@ -5,11 +5,11 @@ It is in an early state so it doesn't work for a lot of different microcontrolle
 This debugger is an example of how my debugging [library](https://github.com/Blinningjr/rust-debug) can be used.
 
 ## Use
-Start by cloning the repository, then use it by running.
+Start by cloning the repository, then use it by running:
 ```
-cargo run <ELF-FILE>
+cargo run
 ```
-or
+or the following to start it as a DAP server:
 ```
 cargo run -- -m server
 ```
@@ -17,8 +17,12 @@ cargo run -- -m server
 To see the available commands type `help` in the CLI.
 
 
-## License
+### Example
+```
+cargo run -- --chip STM32F411RETx --work-directory /home/niklas/Desktop/exjobb/nucleo64-rtic-examples --elf-file /home/niklas/Desktop/exjobb/nucleo64-rtic-examples/target/thumbv7em-none-eabi/debug/nucleo-rtic-blinking-led
+```
 
+## License
 Licensed under either of
 
  * Apache License, Version 2.0
@@ -28,8 +32,8 @@ Licensed under either of
 
 at your option.
 
-## Contribution
 
+## Contribution
 Unless you explicitly state otherwise, any contribution intentionally submitted
 for inclusion in the work by you, as defined in the Apache-2.0 license, shall be
 dual licensed as above, without any additional terms or conditions.
