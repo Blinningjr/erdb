@@ -410,53 +410,19 @@ impl<R: Read, W: Write> DebugAdapter<R, W> {
     }
 
     fn handle_stack_trace_dap_request(&mut self, request: &Request) -> Result<bool> {
-        // Get stack trace
-        self.sender.send(DebugRequest::StackTrace)?;
+        let args: debugserver_types::StackTraceArguments = get_arguments(&request)?;
+        debug!("args: {:?}", args);
+
+        // Get DAP stack frames
+        self.sender.send(DebugRequest::DAPStackFrames)?;
 
         // Get stack trace DebugResponse
         let ack = self.retrieve_response()?;
-        let stack_trace = match ack {
-            DebugResponse::StackTrace { stack_trace } => stack_trace,
+        let stack_frames= match ack {
+            DebugResponse::DAPStackFrames { stack_frames } => stack_frames,
             _ => unreachable!(),
         };
 
-        let mut stack_frames = vec![];
-        for s in stack_trace {
-            // Create Source object
-            let source = debugserver_types::Source {
-                name: s.source.file.clone(),
-                path: match &s.source.directory {
-                    // TODO: Make path os independent?
-                    Some(dir) => match &s.source.file {
-                        Some(file) => Some(format!("{}/{}", dir, file)),
-                        None => None,
-                    },
-                    None => None,
-                },
-                source_reference: None,
-                presentation_hint: None,
-                origin: None,
-                sources: None,
-                adapter_data: None,
-                checksums: None,
-            };
-
-            // Crate and add StackFrame object
-            stack_frames.push(debugserver_types::StackFrame {
-                id: s.call_frame.id as i64,
-                name: s.name,
-                source: Some(source),
-                line: s.source.line.unwrap() as i64,
-                column: match s.source.column {
-                    Some(v) => v as i64,
-                    None => 0,
-                },
-                end_column: None,
-                end_line: None,
-                module_id: None,
-                presentation_hint: Some("normal".to_owned()),
-            });
-        }
 
         let total_frames = stack_frames.len() as i64;
         let body = StackTraceResponseBody {
@@ -484,52 +450,17 @@ impl<R: Read, W: Write> DebugAdapter<R, W> {
         debug!("args: {:?}", args);
 
         // Get stack trace
-        self.sender.send(DebugRequest::StackTrace)?;
+        self.sender.send(DebugRequest::DAPScopes {
+            frame_id: args.frame_id,
+        })?;
 
         // Get stack trace DebugResponse
         let ack = self.retrieve_response()?;
-        let stack_trace = match ack {
-            DebugResponse::StackTrace { stack_trace } => stack_trace,
+        let scopes = match ack {
+            DebugResponse::DAPScopes { scopes } => scopes,
             _ => unreachable!(),
         };
 
-        // Parse scopes
-        let mut scopes = vec![];
-
-        if let Some(s) = stack_trace
-            .iter()
-            .find(|sf| sf.call_frame.id as i64 == args.frame_id)
-        {
-            let source = debugserver_types::Source {
-                // TODO: Make path os independent?
-                name: s.source.file.clone(),
-                path: match &s.source.directory {
-                    Some(dir) => match &s.source.file {
-                        Some(file) => Some(format!("{}/{}", dir, file)),
-                        None => None,
-                    },
-                    None => None,
-                },
-                source_reference: None,
-                presentation_hint: None,
-                origin: None,
-                sources: None,
-                adapter_data: None,
-                checksums: None,
-            };
-            scopes.push(debugserver_types::Scope {
-                column: s.source.column.map(|v| v as i64),
-                end_column: None,
-                end_line: None,
-                expensive: false,
-                indexed_variables: None,
-                line: s.source.line.map(|v| v as i64),
-                name: s.name.clone(),
-                named_variables: None,
-                source: Some(source),
-                variables_reference: s.call_frame.id as i64,
-            });
-        }
 
         let body = debugserver_types::ScopesResponseBody { scopes: scopes };
 
@@ -553,38 +484,35 @@ impl<R: Read, W: Write> DebugAdapter<R, W> {
         debug!("args: {:?}", args);
 
         // Get stack trace
-        self.sender.send(DebugRequest::StackTrace)?;
+        self.sender.send(DebugRequest::DAPVariables {id: args.variables_reference})?;
 
         // Get stack trace DebugResponse
         let ack = self.retrieve_response()?;
-        let stack_trace = match ack {
-            DebugResponse::StackTrace { stack_trace } => stack_trace,
+        let vars = match ack {
+            DebugResponse::DAPVariables { variables } => variables,
             _ => unreachable!(),
         };
 
         // Parse variables
         let mut variables = vec![];
 
-        if let Some(s) = stack_trace
-            .iter()
-            .find(|sf| sf.call_frame.id as i64 == args.variables_reference)
-        {
-            for var in &s.variables {
+            for var in &vars {
+                let (indexed_variables, named_variables) = var.get_num_diff_children();
                 variables.push(debugserver_types::Variable {
                     evaluate_name: None, //Option<String>,
-                    indexed_variables: None,
+                    indexed_variables: Some(indexed_variables),
                     name: match &var.name {
                         Some(name) => name.clone(),
                         None => "<unknown>".to_string(),
                     },
-                    named_variables: None,
+                    named_variables: Some(named_variables),
                     presentation_hint: None,
                     type_: Some(var.type_.clone()),
                     value: var.value_to_string(),
-                    variables_reference: 0, // i64,
+                    variables_reference: var.id, // i64,
                 });
             }
-        }
+        
 
         let body = debugserver_types::VariablesResponseBody {
             variables: variables,

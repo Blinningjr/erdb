@@ -27,6 +27,9 @@ pub enum DebugRequest {
     Code,
     Stack,
     SetCWD { cwd: String },
+    DAPStackFrames,
+    DAPScopes{ frame_id: i64,},
+    DAPVariables {id: i64},
 }
 
 

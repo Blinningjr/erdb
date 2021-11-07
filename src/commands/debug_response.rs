@@ -53,4 +53,13 @@ pub enum DebugResponse {
         message: String,
     },
     SetCWD,
+    DAPStackFrames {
+        stack_frames: Vec<debugserver_types::StackFrame>,
+    },
+    DAPScopes {
+        scopes: Vec<debugserver_types::Scope>,
+    },
+    DAPVariables {
+        variables: Vec<Variable>,
+    },
 }

@@ -27,6 +27,7 @@ use probe_rs::{CoreStatus, MemoryInterface};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
+use regex::Regex;
 
 pub struct DebugHandler {
     config: Config,
@@ -169,6 +170,10 @@ pub fn init(
         running: true,
         registers,
         stack_trace: None,
+        stack_frames: None,
+        scopes: None,
+        variables: None,
+        id_gen: IdGen::new(),
     };
 
     debugger.run(sender, reciver, request)
@@ -185,6 +190,10 @@ struct Debugger<'a, R: Reader<Offset = usize>> {
     running: bool,
     registers: Registers,
     stack_trace: Option<Vec<StackFrame>>,
+    id_gen: IdGen,
+    stack_frames: Option<Vec<debugserver_types::StackFrame>>,
+    scopes: Option<HashMap<i64, Vec<debugserver_types::Scope>>>,
+    variables: Option<HashMap<i64, Vec<Variable>>>,
 }
 
 impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
@@ -234,6 +243,9 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
     fn clear_temporaries(&mut self) {
         self.registers.clear();
         self.stack_trace = None;
+        self.stack_frames = None;
+        self.scopes = None;
+        self.variables = None;
     }
 
     fn check_halted(&mut self, sender: &mut Sender<Command>) -> Result<()> {
@@ -304,6 +316,9 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
                 source_file,
                 source_breakpoints,
             } => self.set_breakpoints_command(source_file, source_breakpoints),
+            DebugRequest::DAPStackFrames => self.dap_stack_frames(),
+            DebugRequest::DAPScopes { frame_id } => self.dap_scopes(frame_id),
+            DebugRequest::DAPVariables { id } => self.dap_variables(id),
 
             _ => Ok(Command::Request(request)),
         }
@@ -497,6 +512,7 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
                 }
                 None => {
                     self.set_stack_trace()?;
+                    self.set_stack_frames()?;
                     self.variable_command(name)
                 }
             },
@@ -523,6 +539,7 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
                 }
                 None => {
                     self.set_stack_trace()?;
+                    self.set_stack_frames()?;
                     self.variables_command()
                 }
             },
@@ -537,6 +554,7 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
             })),
             None => {
                 self.set_stack_trace()?;
+                self.set_stack_frames()?;
                 self.stack_trace_command()
             }
         }
@@ -725,6 +743,57 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
         }))
     }
 
+    fn dap_stack_frames(&mut self) -> Result<Command> {
+        match &self.stack_frames {
+            Some(stack_frames) => Ok(Command::Response(DebugResponse::DAPStackFrames {
+                stack_frames: stack_frames.clone(),
+            })),
+            None => {
+                self.set_stack_trace()?;
+                self.set_stack_frames()?;
+                self.dap_stack_frames()
+            }
+        }
+    }
+
+    fn dap_scopes(&mut self, frame_id: i64) -> Result<Command> {
+        match &self.scopes {
+            Some(scopes) => Ok(Command::Response(DebugResponse::DAPScopes {
+                scopes: scopes.get(&frame_id).unwrap().clone(),
+            })),
+            None => {
+                self.set_stack_trace()?;
+                self.set_stack_frames()?;
+                self.dap_stack_frames()
+            }
+        }
+    }
+    
+    fn dap_variables(&mut self, vars_id: i64) -> Result<Command> {
+        match &self.variables {
+            Some(variables) => Ok(Command::Response(DebugResponse::DAPVariables {
+                variables: variables.get(&vars_id).unwrap().clone(),
+            })),
+            None => {
+                self.set_stack_trace()?;
+                self.set_stack_frames()?;
+                self.dap_stack_frames()
+            }
+        }
+    }
+    
+    pub fn set_variables(&mut self, variables: &mut HashMap<i64, Vec<Variable>>, mut children: Vec<Variable>, id: i64) -> Result<()> {
+        for child in &mut children {
+            if child.children.len() > 0 {
+                child.id = self.id_gen.gen(); 
+                self.set_variables(variables, child.children.clone(), child.id)?;
+            }
+        }
+        variables.insert(id, children.clone());
+
+        Ok(())
+    }
+
     fn set_stack_trace(&mut self) -> Result<()> {
         let core = self.session.core(0)?;
         let mut my_core = MyCore { core };
@@ -741,6 +810,99 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
 
         Ok(())
     }
+
+
+    fn set_stack_frames(&mut self) -> Result<()> {
+        let mut stack_frames = vec![];
+        let mut scopes = HashMap::new();
+        let mut variables = HashMap::new();
+
+        let mut vars = vec!();
+
+        for s in self.stack_trace.as_ref().unwrap() {
+            let id = self.id_gen.gen();
+            {
+                let mut scope = vec![];
+                let (indexed, named) = get_num_diff_children(&s.variables);
+                let source = debugserver_types::Source {
+                    // TODO: Make path os independent?
+                    name: s.source.file.clone(),
+                    path: match &s.source.directory {
+                        Some(dir) => match &s.source.file {
+                            Some(file) => Some(format!("{}/{}", dir, file)),
+                            None => None,
+                        },
+                        None => None,
+                    },
+                    source_reference: None,
+                    presentation_hint: None,
+                    origin: None,
+                    sources: None,
+                    adapter_data: None,
+                    checksums: None,
+                };
+                let scope_id = self.id_gen.gen();
+                scope.push(debugserver_types::Scope {
+                    column: s.source.column.map(|v| v as i64),
+                    end_column: None,
+                    end_line: None,
+                    expensive: false,
+                    indexed_variables: Some(indexed),
+                    named_variables: Some(named),
+                    line: s.source.line.map(|v| v as i64),
+                    name: s.name.clone(),
+                    source: Some(source),
+                    variables_reference: scope_id,
+                });
+                scopes.insert(id, scope);
+                vars.push((s.variables.clone(), scope_id));
+            }
+
+            // Create Source object
+            let source = debugserver_types::Source {
+                name: s.source.file.clone(),
+                path: match &s.source.directory {
+                    // TODO: Make path os independent?
+                    Some(dir) => match &s.source.file {
+                        Some(file) => Some(format!("{}/{}", dir, file)),
+                        None => None,
+                    },
+                    None => None,
+                },
+                source_reference: None,
+                presentation_hint: None,
+                origin: None,
+                sources: None,
+                adapter_data: None,
+                checksums: None,
+            };
+
+            // Crate and add StackFrame object
+            stack_frames.push(debugserver_types::StackFrame {
+                id: id,
+                name: s.name.clone(),
+                source: Some(source),
+                line: s.source.line.unwrap() as i64,
+                column: match s.source.column {
+                    Some(v) => v as i64,
+                    None => 0,
+                },
+                end_column: None,
+                end_line: None,
+                module_id: None,
+                presentation_hint: Some("normal".to_owned()),
+            });
+        }
+        for (vs, sid) in vars {
+            self.set_variables(&mut variables, vs, sid)?;
+        }
+
+        self.stack_frames = Some(stack_frames);
+        self.scopes = Some(scopes);
+        self.variables = Some(variables);
+        Ok(())
+    }
+
 }
 
 fn continue_fix(
@@ -827,15 +989,28 @@ impl<'a, R: Reader<Offset = usize>> DebugInformation<'a, R> {
 }
 
 #[derive(Debug, Clone)]
+pub enum VariableKind {
+    Indexed(i32),
+    Named(String),
+    Unknown,
+}
+
+#[derive(Debug, Clone)]
 pub struct Variable {
+    pub id: i64,
     pub name: Option<String>,
     pub value: String,
     pub type_: String,
     pub source: Option<SourceInformation>,
+    pub kind: VariableKind,
     pub children: Vec<Variable>,
 }
 
 impl Variable {
+    pub fn get_num_diff_children(&self) -> (i64, i64) {
+        get_num_diff_children(&self.children)
+    }
+
     pub fn value_to_string(&self) -> String {
         let mut result;
         match &self.name {
@@ -857,15 +1032,20 @@ impl Variable {
     pub fn resolve_varialbe<R: Reader<Offset = usize>>(
         var: &rust_debug::variable::Variable<R>,
     ) -> Result<Variable> {
+        //println!("raw_var: {:#?}\n\n", var);
         let mut variable = Variable {
+            id: 0,
             name: var.name.clone(),
             value: "This should be overwritten with the correct value".to_string(),
             type_: "".to_owned(),
             source: var.source.clone(),
+            kind: VariableKind::Unknown,
             children: vec![],
         };
 
         variable.evaluate(&var.value, &var.source)?;
+        
+        //println!("p_variable: {:#?}\n\n", variable);
 
         return Ok(variable);
     }
@@ -889,6 +1069,7 @@ impl Variable {
             }
             EvaluatorValue::VariantValue(variant_value) => {
                 let mut variable = Variable {
+                    id: 0,
                     name: None, // Some("< Variant >".to_owned()),
                     value: match variant_value.discr_value {
                         Some(val) => format!("{}", val),
@@ -896,6 +1077,7 @@ impl Variable {
                     },
                     type_: "u64".to_string(),
                     source: source.clone(),
+                    kind: VariableKind::Indexed(variant_value.discr_value.unwrap() as i32),
                     children: vec![],
                 };
                 variable.evaluate(
@@ -921,6 +1103,7 @@ impl Variable {
                         //    value: "< OptimizedOut >".to_owned(),
                         //    type_: "u64".to_string(),
                         //    source: source.clone(),
+                         //       kind: VariableKind::Unknown,
                         //    children: vec![],
                         //};
                         //self.children.push(variable);
@@ -937,10 +1120,12 @@ impl Variable {
                 match subrange_type_value.count {
                     Some(count) => {
                         let variable = Variable {
+                            id: 0,
                             name: Some("< Length >".to_owned()),
                             value: format!("{}", count),
                             type_: "u64".to_owned(),
                             source: source.clone(),
+                            kind: VariableKind::Named("< Length >".to_owned()),
                             children: vec![],
                         };
                         self.children.push(variable);
@@ -949,10 +1134,12 @@ impl Variable {
                         match subrange_type_value.base_type_value.clone() {
                             Some((base_type_value, loc)) => {
                                 let mut variable = Variable {
+                                    id: 0,
                                     name: Some("< Length >".to_owned()),
                                     value: "".to_owned(),
                                     type_: "".to_owned(),
                                     source: source.clone(),
+                                    kind: VariableKind::Named("< Length >".to_owned()),
                                     children: vec![],
                                 };
                                 variable.evaluate(
@@ -989,10 +1176,12 @@ impl Variable {
                 )?;
                 for i in 0..array_type_value.values.len() {
                     let mut variable = Variable {
+                        id: 0,
                         name: Some(format!("__{}", i)),
                         value: "< OptimizedOut >".to_owned(),
                         type_: "".to_owned(),
                         source: source.clone(),
+                        kind: VariableKind::Indexed(i as i32),
                         children: vec![],
                     };
                     variable.evaluate(&array_type_value.values[i], source)?;
@@ -1000,6 +1189,7 @@ impl Variable {
                 }
             }
             EvaluatorValue::Struct(structure_type_value) => {
+                self.kind = VariableKind::Named(structure_type_value.name.clone());
                 self.type_ = format!("{}::{}", self.type_, structure_type_value.name.clone());
                 self.value = structure_type_value.name.clone();
 
@@ -1008,6 +1198,7 @@ impl Variable {
                 }
             }
             EvaluatorValue::Enum(enumeration_type_value) => {
+                self.kind = VariableKind::Named(enumeration_type_value.name.clone());
                 self.name = Some(enumeration_type_value.name.clone());
                 self.type_ = format!("{}::{}", self.type_, enumeration_type_value.name.clone());
                 self.value = "< OptimizedOut >".to_owned();
@@ -1027,17 +1218,37 @@ impl Variable {
                 };
             }
             EvaluatorValue::Union(union_type_value) => {
+                self.kind = VariableKind::Named(union_type_value.name.clone());
                 self.type_ = format!("{}::{}", self.type_, union_type_value.name);
                 for member in &union_type_value.members {
                     self.evaluate(member, source)?;
                 }
             }
             EvaluatorValue::Member(member_value) => {
+                let mut kind = VariableKind::Unknown;
+
+                match member_value.name.clone() {
+                    Some(name) => {
+                        let re = Regex::new(r"__\d+").unwrap();
+
+                        if re.is_match(&name) {
+                            let index = name[2..].parse::<i32>().unwrap();
+                            kind = VariableKind::Indexed(index);
+                        } else { 
+                            kind = VariableKind::Named(name);
+                        }
+                    },
+                    None => (),
+                };
+
+                
                 let mut variable = Variable {
+                    id: 0,
                     name: member_value.name.clone(),
                     value: "< OptimizedOut >".to_owned(),
                     type_: "".to_owned(),
                     source: source.clone(),
+                    kind,
                     children: vec![],
                 };
                 variable.evaluate(&member_value.value, source)?;
@@ -1100,3 +1311,37 @@ pub fn resolve_stack_trace<R: Reader<Offset = usize>>(
     }
     Ok(stack_trace)
 }
+
+
+pub struct IdGen {
+    next_id: i64,
+}
+
+impl IdGen {
+    pub fn new() -> IdGen {
+        IdGen {
+            next_id: 0,
+        }
+    }
+    
+    pub fn gen(&mut self) -> i64 {
+        let id = self.next_id;
+        self.next_id += 1;
+        return id;
+    }
+}
+
+
+    pub fn get_num_diff_children(children: &Vec<Variable>) -> (i64, i64) {
+        let mut indexed_children = 0;
+        let mut named_children = 0;
+        for child in children {
+            match child.kind {
+                VariableKind::Indexed(_) => indexed_children += 1,
+                VariableKind::Named(_) => named_children += 1,
+                _ => (),
+            }; 
+        }
+
+        return (indexed_children, named_children);
+    }

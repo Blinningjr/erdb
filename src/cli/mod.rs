@@ -184,6 +184,9 @@ impl Cli {
             } => self.handle_stack_response(stack_pointer, stack),
             DebugResponse::Error { message } => self.handle_error_response(message),
             DebugResponse::SetCWD => self.handle_set_cwd_response(),
+            DebugResponse::DAPStackFrames{ stack_frames: _} => unreachable!(),
+            DebugResponse::DAPScopes{ scopes: _} => unreachable!(),
+            DebugResponse::DAPVariables{ variables: _} => unreachable!(),
         };
 
         Ok(false)
