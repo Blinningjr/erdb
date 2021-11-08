@@ -1009,8 +1009,8 @@ impl<'a, R: Reader<Offset = usize>> DebugInformation<'a, R> {
 
 #[derive(Debug, Clone)]
 pub enum VariableKind {
-    Indexed(i32),
-    Named(String),
+    Indexed,
+    Named,
     Unknown,
 }
 
@@ -1087,16 +1087,20 @@ impl Variable {
                 self.evaluate(&pointer_type.value, source)?;
             }
             EvaluatorValue::VariantValue(variant_value) => {
+                let name = match variant_value.discr_value {
+                    Some(val) => Some(format!("{}", val)),
+                    None => None,
+                };
                 let mut variable = Variable {
                     id: 0,
-                    name: None, // Some("< Variant >".to_owned()),
+                    name,
                     value: match variant_value.discr_value {
                         Some(val) => format!("{}", val),
                         None => "< OptimizedOut >".to_owned(),
                     },
                     type_: "u64".to_string(),
                     source: source.clone(),
-                    kind: VariableKind::Indexed(variant_value.discr_value.unwrap() as i32),
+                    kind: VariableKind::Indexed,
                     children: vec![],
                 };
                 variable.evaluate(
@@ -1144,7 +1148,7 @@ impl Variable {
                             value: format!("{}", count),
                             type_: "u64".to_owned(),
                             source: source.clone(),
-                            kind: VariableKind::Named("< Length >".to_owned()),
+                            kind: VariableKind::Named,
                             children: vec![],
                         };
                         self.children.push(variable);
@@ -1158,7 +1162,7 @@ impl Variable {
                                     value: "".to_owned(),
                                     type_: "".to_owned(),
                                     source: source.clone(),
-                                    kind: VariableKind::Named("< Length >".to_owned()),
+                                    kind: VariableKind::Named,
                                     children: vec![],
                                 };
                                 variable.evaluate(
@@ -1196,11 +1200,11 @@ impl Variable {
                 for i in 0..array_type_value.values.len() {
                     let mut variable = Variable {
                         id: 0,
-                        name: Some(format!("__{}", i)),
+                        name: Some(format!("{}", i)),
                         value: "< OptimizedOut >".to_owned(),
                         type_: "".to_owned(),
                         source: source.clone(),
-                        kind: VariableKind::Indexed(i as i32),
+                        kind: VariableKind::Indexed,
                         children: vec![],
                     };
                     variable.evaluate(&array_type_value.values[i], source)?;
@@ -1208,7 +1212,8 @@ impl Variable {
                 }
             }
             EvaluatorValue::Struct(structure_type_value) => {
-                self.kind = VariableKind::Named(structure_type_value.name.clone());
+                self.name = Some(structure_type_value.name.clone());
+                self.kind = VariableKind::Named;
                 self.type_ = format!("{}::{}", self.type_, structure_type_value.name.clone());
                 self.value = structure_type_value.name.clone();
 
@@ -1217,7 +1222,7 @@ impl Variable {
                 }
             }
             EvaluatorValue::Enum(enumeration_type_value) => {
-                self.kind = VariableKind::Named(enumeration_type_value.name.clone());
+                self.kind = VariableKind::Named;
                 self.name = Some(enumeration_type_value.name.clone());
                 self.type_ = format!("{}::{}", self.type_, enumeration_type_value.name.clone());
                 self.value = "< OptimizedOut >".to_owned();
@@ -1237,7 +1242,8 @@ impl Variable {
                 };
             }
             EvaluatorValue::Union(union_type_value) => {
-                self.kind = VariableKind::Named(union_type_value.name.clone());
+                self.name = Some(union_type_value.name.clone());
+                self.kind = VariableKind::Named;
                 self.type_ = format!("{}::{}", self.type_, union_type_value.name);
                 for member in &union_type_value.members {
                     self.evaluate(member, source)?;
@@ -1246,24 +1252,25 @@ impl Variable {
             EvaluatorValue::Member(member_value) => {
                 let mut kind = VariableKind::Unknown;
 
-                match member_value.name.clone() {
+                let name = match member_value.name.clone() {
                     Some(name) => {
                         let re = Regex::new(r"__\d+").unwrap();
-
                         if re.is_match(&name) {
                             let index = name[2..].parse::<i32>().unwrap();
-                            kind = VariableKind::Indexed(index);
+                            kind = VariableKind::Indexed;
+                            Some(format!("{}", index))
                         } else { 
-                            kind = VariableKind::Named(name);
+                            kind = VariableKind::Named;
+                            Some(name)
                         }
                     },
-                    None => (),
+                    None => None,
                 };
 
                 
                 let mut variable = Variable {
                     id: 0,
-                    name: member_value.name.clone(),
+                    name,
                     value: "< OptimizedOut >".to_owned(),
                     type_: "".to_owned(),
                     source: source.clone(),
@@ -1363,8 +1370,8 @@ impl IdGen {
         let mut named_children = 0;
         for child in children {
             match child.kind {
-                VariableKind::Indexed(_) => indexed_children += 1,
-                VariableKind::Named(_) => named_children += 1,
+                VariableKind::Indexed => indexed_children += 1,
+                VariableKind::Named => named_children += 1,
                 _ => (),
             }; 
         }
