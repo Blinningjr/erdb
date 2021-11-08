@@ -823,25 +823,25 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
             let id = self.id_gen.gen();
             {
                 let mut scope = vec![];
-                {
-                    let (indexed, named) = get_num_diff_children(&s.variables);
-                    let source = debugserver_types::Source {
-                        // TODO: Make path os independent?
-                        name: s.source.file.clone(),
-                        path: match &s.source.directory {
-                            Some(dir) => match &s.source.file {
-                                Some(file) => Some(format!("{}/{}", dir, file)),
-                                None => None,
-                            },
+                let source = debugserver_types::Source {
+                    // TODO: Make path os independent?
+                    name: s.source.file.clone(),
+                    path: match &s.source.directory {
+                        Some(dir) => match &s.source.file {
+                            Some(file) => Some(format!("{}/{}", dir, file)),
                             None => None,
                         },
-                        source_reference: None,
-                        presentation_hint: None,
-                        origin: None,
-                        sources: None,
-                        adapter_data: None,
-                        checksums: None,
-                    };
+                        None => None,
+                    },
+                    source_reference: None,
+                    presentation_hint: None,
+                    origin: None,
+                    sources: None,
+                    adapter_data: None,
+                    checksums: None,
+                };
+                {
+                    let (indexed, named) = get_num_diff_children(&s.variables);
                     let scope_id = self.id_gen.gen();
                     scope.push(debugserver_types::Scope {
                         column: s.source.column.map(|v| v as i64),
@@ -851,11 +851,28 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
                         indexed_variables: Some(indexed),
                         named_variables: Some(named),
                         line: s.source.line.map(|v| v as i64),
-                        name: s.name.clone(),
-                        source: Some(source),
+                        name: "locale".to_owned(),
+                        source: Some(source.clone()),
                         variables_reference: scope_id,
                     });
                     vars.push((s.variables.clone(), scope_id));
+                }
+                {
+                    let (indexed, named) = get_num_diff_children(&s.arguments);
+                    let scope_id = self.id_gen.gen();
+                    scope.push(debugserver_types::Scope {
+                        column: s.source.column.map(|v| v as i64),
+                        end_column: None,
+                        end_line: None,
+                        expensive: false,
+                        indexed_variables: Some(indexed),
+                        named_variables: Some(named),
+                        line: s.source.line.map(|v| v as i64),
+                        name: "arguments".to_owned(),
+                        source: Some(source),
+                        variables_reference: scope_id,
+                    });
+                    vars.push((s.arguments.clone(), scope_id));
                 }
                 {
                 let (indexed, named) = get_num_diff_children(&s.registers);
@@ -868,7 +885,7 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
                     indexed_variables: Some(indexed),
                     named_variables: Some(named),
                     line: None,
-                    name: "Registers".to_owned(),
+                    name: "registers".to_owned(),
                     source: None,
                     variables_reference: scope_id,
                 });
@@ -1294,6 +1311,7 @@ pub struct StackFrame {
     pub call_frame: CallFrame,
     pub source: SourceInformation,
     pub variables: Vec<Variable>,
+    pub arguments: Vec<Variable>,
     pub registers: Vec<Variable>,
 }
 
@@ -1306,6 +1324,11 @@ impl StackFrame {
             variables.push(Variable::resolve_varialbe(var)?);
         }
         
+        let mut arguments = vec![];
+        for var in &frame.arguments {
+            arguments.push(Variable::resolve_varialbe(var)?);
+        }
+        
         let mut registers = vec![];
         for var in &frame.registers {
             registers.push(Variable::resolve_varialbe(var)?);
@@ -1316,6 +1339,7 @@ impl StackFrame {
             call_frame: frame.call_frame.clone(),
             source: frame.source.clone(),
             variables,
+            arguments,
             registers,
         })
     }
