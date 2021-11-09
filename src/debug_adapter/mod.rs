@@ -228,6 +228,7 @@ impl<R: Read, W: Write> DebugAdapter<R, W> {
     }
 
     fn handle_event_command(&mut self, event: DebugEvent) -> Result<()> {
+        debug!("event {:?}", event);
         match event {
             DebugEvent::Halted {
                 pc: _,
@@ -422,7 +423,6 @@ impl<R: Read, W: Write> DebugAdapter<R, W> {
             DebugResponse::DAPStackFrames { stack_frames } => stack_frames,
             _ => unreachable!(),
         };
-
 
         let total_frames = stack_frames.len() as i64;
         let body = StackTraceResponseBody {
@@ -641,12 +641,13 @@ impl<R: Read, W: Write> DebugAdapter<R, W> {
             None => vec![],
         };
 
-        let breakpoints: Vec<Breakpoint> = match args.source.path {
+        let breakpoints: Vec<Breakpoint> = match args.source.path.clone() {
             Some(path) => {
                 // Send SetBreakpoints DebugRequest
                 self.sender.send(DebugRequest::SetBreakpoints {
                     source_file: path,
                     source_breakpoints: source_breakpoints,
+                    source: Some(args.source.clone()),
                 })?;
 
                 // Get SetBreakpoints DebugResponse

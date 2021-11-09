@@ -315,7 +315,8 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
             DebugRequest::SetBreakpoints {
                 source_file,
                 source_breakpoints,
-            } => self.set_breakpoints_command(source_file, source_breakpoints),
+                source,
+            } => self.set_breakpoints_command(source_file, source_breakpoints, source),
             DebugRequest::DAPStackFrames => self.dap_stack_frames(),
             DebugRequest::DAPScopes { frame_id } => self.dap_scopes(frame_id),
             DebugRequest::DAPVariables { id } => self.dap_variables(id),
@@ -686,6 +687,7 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
         &mut self,
         source_file: String,
         source_breakpoints: Vec<SourceBreakpoint>,
+        source: Option<debugserver_types::Source>
     ) -> Result<Command> {
         // Clear all existing breakpoints
         let mut core = self.session.core(0)?;
@@ -706,7 +708,7 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
                         id: Some(address as i64),
                         verified: true,
                         message: None,
-                        source: None,
+                        source: source.clone(),
                         line: Some(bkpt.line),
                         column: bkpt.column,
                         end_line: None,
@@ -727,7 +729,7 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
                     id: None,
                     verified: false,
                     message: None,
-                    source: None,
+                    source: source.clone(),
                     line: Some(bkpt.line),
                     column: bkpt.column,
                     end_line: None,
