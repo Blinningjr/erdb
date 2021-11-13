@@ -6,6 +6,7 @@ use rust_debug::call_stack::{CallFrame, MemoryAccess};
 use rust_debug::evaluate::evaluate::{get_udata, EvaluatorValue};
 use rust_debug::registers::Registers;
 use rust_debug::source_information::{find_breakpoint_location, SourceInformation};
+use rust_debug::source_information::get_line_number;
 
 use gimli::DebugFrame;
 use gimli::Dwarf;
@@ -821,7 +822,11 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
 
         let mut vars = vec!();
 
+
         for s in self.stack_trace.as_ref().unwrap() {
+
+            let test_line = get_line_number(self.debug_info.dwarf, s.call_frame.code_location as u64)?;
+
             let id = self.id_gen.gen();
             {
                 let mut scope = vec![];
@@ -920,11 +925,8 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
                 id: id,
                 name: s.name.clone(),
                 source: Some(source),
-                line: s.source.line.unwrap() as i64,
-                column: match s.source.column {
-                    Some(v) => v as i64,
-                    None => 0,
-                },
+                line: match test_line {Some(v) => v as i64, None => s.source.line.unwrap() as i64,},
+                column: 0,
                 end_column: None,
                 end_line: None,
                 module_id: None,
