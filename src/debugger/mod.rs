@@ -5,8 +5,8 @@ use config::Config;
 use rust_debug::call_stack::{CallFrame, MemoryAccess};
 use rust_debug::evaluate::evaluate::{get_udata, EvaluatorValue};
 use rust_debug::registers::Registers;
-use rust_debug::source_information::{find_breakpoint_location, SourceInformation};
 use rust_debug::source_information::get_line_number;
+use rust_debug::source_information::{find_breakpoint_location, SourceInformation};
 
 use gimli::DebugFrame;
 use gimli::Dwarf;
@@ -25,10 +25,10 @@ use debugserver_types::{Breakpoint, SourceBreakpoint};
 use log::{info, warn};
 use probe_rs::flashing::{download_file, Format};
 use probe_rs::{CoreStatus, MemoryInterface};
+use regex::Regex;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
-use regex::Regex;
 
 pub struct DebugHandler {
     config: Config,
@@ -688,7 +688,7 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
         &mut self,
         source_file: String,
         source_breakpoints: Vec<SourceBreakpoint>,
-        source: Option<debugserver_types::Source>
+        source: Option<debugserver_types::Source>,
     ) -> Result<Command> {
         // Clear all existing breakpoints
         let mut core = self.session.core(0)?;
@@ -771,7 +771,7 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
             }
         }
     }
-    
+
     fn dap_variables(&mut self, vars_id: i64) -> Result<Command> {
         match &self.variables {
             Some(variables) => Ok(Command::Response(DebugResponse::DAPVariables {
@@ -784,11 +784,16 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
             }
         }
     }
-    
-    pub fn set_variables(&mut self, variables: &mut HashMap<i64, Vec<Variable>>, mut children: Vec<Variable>, id: i64) -> Result<()> {
+
+    pub fn set_variables(
+        &mut self,
+        variables: &mut HashMap<i64, Vec<Variable>>,
+        mut children: Vec<Variable>,
+        id: i64,
+    ) -> Result<()> {
         for child in &mut children {
             if child.children.len() > 0 {
-                child.id = self.id_gen.gen(); 
+                child.id = self.id_gen.gen();
                 self.set_variables(variables, child.children.clone(), child.id)?;
             }
         }
@@ -814,18 +819,16 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
         Ok(())
     }
 
-
     fn set_stack_frames(&mut self) -> Result<()> {
         let mut stack_frames = vec![];
         let mut scopes = HashMap::new();
         let mut variables = HashMap::new();
 
-        let mut vars = vec!();
-
+        let mut vars = vec![];
 
         for s in self.stack_trace.as_ref().unwrap() {
-
-            let test_line = get_line_number(self.debug_info.dwarf, s.call_frame.code_location as u64)?;
+            let test_line =
+                get_line_number(self.debug_info.dwarf, s.call_frame.code_location as u64)?;
 
             let id = self.id_gen.gen();
             {
@@ -882,21 +885,21 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
                     vars.push((s.arguments.clone(), scope_id));
                 }
                 {
-                let (indexed, named) = get_num_diff_children(&s.registers);
-                let scope_id = self.id_gen.gen();
-                scope.push(debugserver_types::Scope {
-                    column: None,
-                    end_column: None,
-                    end_line: None,
-                    expensive: false,
-                    indexed_variables: Some(indexed),
-                    named_variables: Some(named),
-                    line: None,
-                    name: "registers".to_owned(),
-                    source: None,
-                    variables_reference: scope_id,
-                });
-                vars.push((s.registers.clone(), scope_id));
+                    let (indexed, named) = get_num_diff_children(&s.registers);
+                    let scope_id = self.id_gen.gen();
+                    scope.push(debugserver_types::Scope {
+                        column: None,
+                        end_column: None,
+                        end_line: None,
+                        expensive: false,
+                        indexed_variables: Some(indexed),
+                        named_variables: Some(named),
+                        line: None,
+                        name: "registers".to_owned(),
+                        source: None,
+                        variables_reference: scope_id,
+                    });
+                    vars.push((s.registers.clone(), scope_id));
                 }
                 scopes.insert(id, scope);
             }
@@ -925,7 +928,10 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
                 id: id,
                 name: s.name.clone(),
                 source: Some(source),
-                line: match test_line {Some(v) => v as i64, None => s.source.line.unwrap() as i64,},
+                line: match test_line {
+                    Some(v) => v as i64,
+                    None => 1,
+                },
                 column: 0,
                 end_column: None,
                 end_line: None,
@@ -942,7 +948,6 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
         self.variables = Some(variables);
         Ok(())
     }
-
 }
 
 fn continue_fix(
@@ -1066,7 +1071,6 @@ impl Variable {
             result = format!("{} }}", result);
         }
         result
-
     }
 
     pub fn resolve_varialbe<R: Reader<Offset = usize>>(
@@ -1084,7 +1088,7 @@ impl Variable {
         };
 
         variable.evaluate(&var.value, &var.source)?;
-        
+
         //println!("p_variable: {:#?}\n\n", variable);
 
         return Ok(variable);
@@ -1147,7 +1151,7 @@ impl Variable {
                         //    value: "< OptimizedOut >".to_owned(),
                         //    type_: "u64".to_string(),
                         //    source: source.clone(),
-                         //       kind: VariableKind::Unknown,
+                        //       kind: VariableKind::Unknown,
                         //    children: vec![],
                         //};
                         //self.children.push(variable);
@@ -1280,15 +1284,14 @@ impl Variable {
                             let index = name[2..].parse::<i32>().unwrap();
                             kind = VariableKind::Indexed;
                             Some(format!("{}", index))
-                        } else { 
+                        } else {
                             kind = VariableKind::Named;
                             Some(name)
                         }
-                    },
+                    }
                     None => None,
                 };
 
-                
                 let mut variable = Variable {
                     id: 0,
                     name,
@@ -1327,12 +1330,12 @@ impl StackFrame {
         for var in &frame.variables {
             variables.push(Variable::resolve_varialbe(var)?);
         }
-        
+
         let mut arguments = vec![];
         for var in &frame.arguments {
             arguments.push(Variable::resolve_varialbe(var)?);
         }
-        
+
         let mut registers = vec![];
         for var in &frame.registers {
             registers.push(Variable::resolve_varialbe(var)?);
@@ -1373,18 +1376,15 @@ pub fn resolve_stack_trace<R: Reader<Offset = usize>>(
     Ok(stack_trace)
 }
 
-
 pub struct IdGen {
     next_id: i64,
 }
 
 impl IdGen {
     pub fn new() -> IdGen {
-        IdGen {
-            next_id: 0,
-        }
+        IdGen { next_id: 0 }
     }
-    
+
     pub fn gen(&mut self) -> i64 {
         let id = self.next_id;
         self.next_id += 1;
@@ -1392,17 +1392,16 @@ impl IdGen {
     }
 }
 
-
-    pub fn get_num_diff_children(children: &Vec<Variable>) -> (i64, i64) {
-        let mut indexed_children = 0;
-        let mut named_children = 0;
-        for child in children {
-            match child.kind {
-                VariableKind::Indexed => indexed_children += 1,
-                VariableKind::Named => named_children += 1,
-                _ => (),
-            }; 
-        }
-
-        return (indexed_children, named_children);
+pub fn get_num_diff_children(children: &Vec<Variable>) -> (i64, i64) {
+    let mut indexed_children = 0;
+    let mut named_children = 0;
+    for child in children {
+        match child.kind {
+            VariableKind::Indexed => indexed_children += 1,
+            VariableKind::Named => named_children += 1,
+            _ => (),
+        };
     }
+
+    return (indexed_children, named_children);
+}
