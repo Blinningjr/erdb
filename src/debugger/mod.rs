@@ -5,7 +5,6 @@ use config::Config;
 use rust_debug::call_stack::{CallFrame, MemoryAccess};
 use rust_debug::evaluate::evaluate::{get_udata, EvaluatorValue};
 use rust_debug::registers::Registers;
-use rust_debug::source_information::get_line_number;
 use rust_debug::source_information::{find_breakpoint_location, SourceInformation};
 
 use gimli::DebugFrame;
@@ -827,17 +826,20 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
         let mut vars = vec![];
 
         for s in self.stack_trace.as_ref().unwrap() {
-            let test_line =
-                get_line_number(self.debug_info.dwarf, s.call_frame.code_location as u64)?;
+            let source_info = SourceInformation::get_from_address(
+                self.debug_info.dwarf,
+                s.call_frame.code_location as u64,
+                &self.cwd,
+            )?;
 
             let id = self.id_gen.gen();
             {
                 let mut scope = vec![];
                 let source = debugserver_types::Source {
                     // TODO: Make path os independent?
-                    name: s.source.file.clone(),
-                    path: match &s.source.directory {
-                        Some(dir) => match &s.source.file {
+                    name: source_info.file.clone(),
+                    path: match &source_info.directory {
+                        Some(dir) => match &source_info.file {
                             Some(file) => Some(format!("{}/{}", dir, file)),
                             None => None,
                         },
@@ -854,13 +856,13 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
                     let (indexed, named) = get_num_diff_children(&s.variables);
                     let scope_id = self.id_gen.gen();
                     scope.push(debugserver_types::Scope {
-                        column: s.source.column.map(|v| v as i64),
+                        column: source_info.column.map(|v| v as i64),
                         end_column: None,
                         end_line: None,
                         expensive: false,
                         indexed_variables: Some(indexed),
                         named_variables: Some(named),
-                        line: s.source.line.map(|v| v as i64),
+                        line: source_info.line.map(|v| v as i64),
                         name: "locale".to_owned(),
                         source: Some(source.clone()),
                         variables_reference: scope_id,
@@ -871,13 +873,13 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
                     let (indexed, named) = get_num_diff_children(&s.arguments);
                     let scope_id = self.id_gen.gen();
                     scope.push(debugserver_types::Scope {
-                        column: s.source.column.map(|v| v as i64),
+                        column: source_info.column.map(|v| v as i64),
                         end_column: None,
                         end_line: None,
                         expensive: false,
                         indexed_variables: Some(indexed),
                         named_variables: Some(named),
-                        line: s.source.line.map(|v| v as i64),
+                        line: source_info.line.map(|v| v as i64),
                         name: "arguments".to_owned(),
                         source: Some(source),
                         variables_reference: scope_id,
@@ -906,10 +908,10 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
 
             // Create Source object
             let source = debugserver_types::Source {
-                name: s.source.file.clone(),
-                path: match &s.source.directory {
+                name: source_info.file.clone(),
+                path: match &source_info.directory {
                     // TODO: Make path os independent?
-                    Some(dir) => match &s.source.file {
+                    Some(dir) => match &source_info.file {
                         Some(file) => Some(format!("{}/{}", dir, file)),
                         None => None,
                     },
@@ -928,11 +930,14 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
                 id: id,
                 name: s.name.clone(),
                 source: Some(source),
-                line: match test_line {
+                line: match source_info.line {
                     Some(v) => v as i64,
                     None => 1,
                 },
-                column: 0,
+                column: match source_info.column {
+                    Some(v) => v as i64,
+                    None => 1,
+                },
                 end_column: None,
                 end_line: None,
                 module_id: None,
