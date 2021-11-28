@@ -1062,16 +1062,22 @@ impl Variable {
     }
 
     pub fn value_to_string(&self) -> String {
-        let mut result;
-        match &self.name {
-            Some(name) => result = format!("{} = {}", name, self.value),
-            None => result = format!("{}", self.value),
-        };
+        self.value_to_string_recursive(true)
+    }
+
+    fn value_to_string_recursive(&self, first: bool) -> String {
+        let mut result = format!("{}", self.value);
+        if !first {
+            match self.name.clone() {
+                Some(name) => result = format!("{}: {}", name, self.value),
+                None => (),
+            };
+        }
 
         if self.children.len() > 0 {
             result = format!("{} {{", result);
             for child in &self.children {
-                result = format!("{} {},", result, child.value_to_string());
+                result = format!("{} {},", result, child.value_to_string_recursive(false));
             }
             result = format!("{} }}", result);
         }
@@ -1081,7 +1087,7 @@ impl Variable {
     pub fn resolve_varialbe<R: Reader<Offset = usize>>(
         var: &rust_debug::variable::Variable<R>,
     ) -> Result<Variable> {
-        //println!("raw_var: {:#?}\n\n", var);
+        //        println!("raw_var: {:#?}\n\n", var);
         let mut variable = Variable {
             id: 0,
             name: var.name.clone(),
@@ -1242,7 +1248,7 @@ impl Variable {
                 }
             }
             EvaluatorValue::Struct(structure_type_value) => {
-                self.name = Some(structure_type_value.name.clone());
+                //self.name = Some(structure_type_value.name.clone());
                 self.kind = VariableKind::Named;
                 self.type_ = format!("{}::{}", self.type_, structure_type_value.name.clone());
                 self.value = structure_type_value.name.clone();
@@ -1253,7 +1259,7 @@ impl Variable {
             }
             EvaluatorValue::Enum(enumeration_type_value) => {
                 self.kind = VariableKind::Named;
-                self.name = Some(enumeration_type_value.name.clone());
+                // self.name = Some(enumeration_type_value.name.clone());
                 self.type_ = format!("{}::{}", self.type_, enumeration_type_value.name.clone());
                 self.value = "< OptimizedOut >".to_owned();
                 match &enumeration_type_value.variant {
@@ -1272,7 +1278,7 @@ impl Variable {
                 };
             }
             EvaluatorValue::Union(union_type_value) => {
-                self.name = Some(union_type_value.name.clone());
+                //self.name = Some(union_type_value.name.clone());
                 self.kind = VariableKind::Named;
                 self.type_ = format!("{}::{}", self.type_, union_type_value.name);
                 for member in &union_type_value.members {
