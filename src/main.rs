@@ -1,51 +1,30 @@
-mod commands;
-mod debugger;
 mod cli;
+mod commands;
 mod debug_adapter;
+mod debugger;
 
+use rust_debug::utils::in_ranges;
 
-use rust_debug::{
-    utils::{
-        in_ranges
-    },
-};
-
-use std::{borrow, fs};
 use std::path::Path;
+use std::{borrow, fs};
 
-use probe_rs::{
-    Probe,
-    Session,
-};
+use probe_rs::{Probe, Session};
 
 use object::{Object, ObjectSection};
 
-use gimli::{
-    Unit,
-    Dwarf,
-    Error,
-    Reader,
-    DebugFrame,
-    LittleEndian,
-    read::EndianRcSlice,
-    Section,
-};
+use gimli::{read::EndianRcSlice, DebugFrame, Dwarf, Error, LittleEndian, Reader, Section, Unit};
 
 use std::rc::Rc;
 
 use std::path::PathBuf;
 use structopt::StructOpt;
 
-use anyhow::{
-    Context,
-    Result,
-    anyhow,
-};
+use anyhow::{anyhow, Context, Result};
 
 use std::str::FromStr;
 
-
-use simplelog::*;
+use env_logger::*;
+use log::LevelFilter;
 
 #[derive(Debug)]
 enum Mode {
@@ -58,11 +37,11 @@ impl FromStr for Mode {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "Debug"         => Ok(Mode::Debug),
-            "debug"         => Ok(Mode::Debug),
-            "DebugAdapter"  => Ok(Mode::DebugAdapter),
-            "server"        => Ok(Mode::DebugAdapter),
-            _               => Err("Error: invalid mode"),
+            "Debug" => Ok(Mode::Debug),
+            "debug" => Ok(Mode::Debug),
+            "DebugAdapter" => Ok(Mode::DebugAdapter),
+            "server" => Ok(Mode::DebugAdapter),
+            _ => Err("Error: invalid mode"),
         }
     }
 }
@@ -91,28 +70,40 @@ pub struct Opt {
     chip: Option<String>,
 
     /// Set Port: only required when `mode` is set to `DebugAdapter`
-    #[structopt(short = "p", long = "port", required_if("mode", "DebugAdapter"), default_value = "8800")]
+    #[structopt(
+        short = "p",
+        long = "port",
+        required_if("mode", "DebugAdapter"),
+        default_value = "8800"
+    )]
     port: u16,
 }
 
-
 fn main() -> Result<()> {
     let opt = Opt::from_args();
-    
+
     // Setup log
-    let cfg = ConfigBuilder::new().build();
     let log_level = opt.verbosity;
-    let _ = TermLogger::init(log_level, cfg, TerminalMode::Mixed);
-    
+    let probe_rs_log_level = match log_level {
+        LevelFilter::Debug => LevelFilter::Info,
+        LevelFilter::Trace => LevelFilter::Info,
+        LevelFilter::Info => LevelFilter::Warn,
+        _ => log_level,
+    };
+
+    let mut builder = Builder::from_default_env();
+    builder
+        .filter(None, log_level)
+        .filter_module("probe_rs", probe_rs_log_level)
+        .init();
+
     match opt.mode {
         Mode::Debug => cli::debug_mode(opt),
         Mode::DebugAdapter => debug_adapter::start_tcp_server(opt.port),
     }
 }
 
-
-fn attach_probe(chip: &str, probe_num: usize) -> Result<Session>
-{
+fn attach_probe(chip: &str, probe_num: usize) -> Result<Session> {
     // Get a list of all available debug probes.
     let probes = Probe::list_all();
 
@@ -123,13 +114,19 @@ fn attach_probe(chip: &str, probe_num: usize) -> Result<Session>
     };
 
     // Attach to a chip.
-    let session = probe.attach_under_reset(chip).context("Failed to attach probe to target")?;
- 
+    let session = probe
+        .attach_under_reset(chip)
+        .context("Failed to attach probe to target")?;
+
     Ok(session)
 }
 
-
-fn read_dwarf<'a>(path: &Path) -> Result<(Dwarf<EndianRcSlice<LittleEndian>>, DebugFrame<EndianRcSlice<LittleEndian>>)> {
+fn read_dwarf<'a>(
+    path: &Path,
+) -> Result<(
+    Dwarf<EndianRcSlice<LittleEndian>>,
+    DebugFrame<EndianRcSlice<LittleEndian>>,
+)> {
     let file = fs::File::open(&path)?;
     let mmap = unsafe { memmap::Mmap::map(&file)? };
     let object = object::File::parse(&*mmap)?;
@@ -164,12 +161,9 @@ fn read_dwarf<'a>(path: &Path) -> Result<(Dwarf<EndianRcSlice<LittleEndian>>, De
     Ok((dwarf, frame_section))
 }
 
-
-pub fn get_current_unit<'a, R>(
-        dwarf: &'a Dwarf<R>,
-        pc: u32
-    ) -> Result<Unit<R>, Error>
-        where R: Reader<Offset = usize>
+pub fn get_current_unit<'a, R>(dwarf: &'a Dwarf<R>, pc: u32) -> Result<Unit<R>, Error>
+where
+    R: Reader<Offset = usize>,
 {
     // TODO: Maybe return a Vec of units
     let mut res = None;
@@ -193,4 +187,3 @@ pub fn get_current_unit<'a, R>(
         None => Err(Error::MissingUnitDie),
     };
 }
-
