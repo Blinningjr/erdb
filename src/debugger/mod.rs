@@ -7,6 +7,8 @@ use rust_debug::evaluate::evaluate::{get_udata, EvaluatorValue};
 use rust_debug::registers::Registers;
 use rust_debug::source_information::{find_breakpoint_location, SourceInformation};
 
+use std::num::NonZeroU64;
+
 use gimli::DebugFrame;
 use gimli::Dwarf;
 use gimli::Reader;
@@ -442,7 +444,7 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
                 self.debug_info.dwarf,
                 &self.cwd,
                 &path,
-                address as u64,
+                NonZeroU64::new(address as u64).unwrap(),
                 None,
             )?
             .expect("Could not file location form source file line number")
@@ -700,8 +702,8 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
                 self.debug_info.dwarf,
                 &self.cwd,
                 &source_file,
-                bkpt.line as u64,
-                bkpt.column.map(|c| c as u64),
+                NonZeroU64::new(bkpt.line as u64).unwrap(),
+                bkpt.column.map(|c| NonZeroU64::new(c as u64).unwrap()),
             )? {
                 Some(address) => {
                     let mut breakpoint = Breakpoint {
@@ -856,13 +858,13 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
                     let (indexed, named) = get_num_diff_children(&s.variables);
                     let scope_id = self.id_gen.gen();
                     scope.push(debugserver_types::Scope {
-                        column: source_info.column.map(|v| v as i64),
+                        column: source_info.column.map(|v| v.get() as i64),
                         end_column: None,
                         end_line: None,
                         expensive: false,
                         indexed_variables: Some(indexed),
                         named_variables: Some(named),
-                        line: source_info.line.map(|v| v as i64),
+                        line: source_info.line.map(|v| v.get() as i64),
                         name: "locale".to_owned(),
                         source: Some(source.clone()),
                         variables_reference: scope_id,
@@ -873,13 +875,13 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
                     let (indexed, named) = get_num_diff_children(&s.arguments);
                     let scope_id = self.id_gen.gen();
                     scope.push(debugserver_types::Scope {
-                        column: source_info.column.map(|v| v as i64),
+                        column: source_info.column.map(|v| v.get() as i64),
                         end_column: None,
                         end_line: None,
                         expensive: false,
                         indexed_variables: Some(indexed),
                         named_variables: Some(named),
-                        line: source_info.line.map(|v| v as i64),
+                        line: source_info.line.map(|v| v.get() as i64),
                         name: "arguments".to_owned(),
                         source: Some(source),
                         variables_reference: scope_id,
@@ -931,11 +933,11 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
                 name: s.name.clone(),
                 source: Some(source),
                 line: match source_info.line {
-                    Some(v) => v as i64,
+                    Some(v) => v.get() as i64,
                     None => 1,
                 },
                 column: match source_info.column {
-                    Some(v) => v as i64,
+                    Some(v) => v.get() as i64,
                     None => 1,
                 },
                 end_column: None,

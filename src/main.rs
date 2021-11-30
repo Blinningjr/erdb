@@ -146,15 +146,15 @@ fn read_dwarf<'a>(
 
     // Load a supplementary section. We don't have a supplementary object file,
     // so always return an empty slice.
-    let sup_loader = |_| {
-        Ok(EndianRcSlice::new(
-            Rc::from(&*borrow::Cow::Borrowed(&[][..])),
-            LittleEndian,
-        ))
-    };
+    //let sup_loader = |_| {
+    //    Ok(EndianRcSlice::new(
+    //        Rc::from(&*borrow::Cow::Borrowed(&[][..])),
+    //        LittleEndian,
+    //    ))
+    //};
 
     // Load all of the sections.
-    let dwarf = Dwarf::load(&loader, &sup_loader)?;
+    let dwarf = Dwarf::load(&loader)?; //, &sup_loader)?;
 
     let frame_section = DebugFrame::load(loader)?;
 
