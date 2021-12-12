@@ -23,6 +23,7 @@ serde			= "1.0"
 capstone		= "0.8"
 crossbeam-channel	= "0.5"
 regex = "1"
+chrono			= "0.4"
 
 #rust-debug = { path = "/home/niklas/Desktop/exjobb/rust-debug" }  
 rust-debug = { git = "https://github.com/Blinningjr/rust-debug.git" }

@@ -23,7 +23,7 @@ use anyhow::{anyhow, Context, Result};
 use capstone::arch::BuildsCapstone;
 use crossbeam_channel::{Receiver, Sender, TryRecvError};
 use debugserver_types::{Breakpoint, SourceBreakpoint};
-use log::{info, warn};
+use log::{error, info, warn};
 use probe_rs::flashing::{download_file, Format};
 use probe_rs::{CoreStatus, MemoryInterface};
 use regex::Regex;
@@ -114,10 +114,28 @@ impl DebugHandler {
                 let new_request = init(
                     sender,
                     reciver,
-                    self.config.elf_file_path.clone().unwrap(),
+                    match self.config.elf_file_path.clone() {
+                        Some(val) => val,
+                        None => {
+                            error!("Requires elf file path");
+                            return Err(anyhow!("Requires elf file path"));
+                        }
+                    },
                     self.config.probe_num,
-                    self.config.chip.clone().unwrap(),
-                    self.config.work_directory.clone().unwrap(),
+                    match self.config.chip.clone() {
+                        Some(val) => val,
+                        None => {
+                            error!("Requires chip");
+                            return Err(anyhow!("Requires chip"));
+                        }
+                    },
+                    match self.config.work_directory.clone() {
+                        Some(val) => val,
+                        None => {
+                            error!("Requires elf file path");
+                            return Err(anyhow!("Requires elf file path"));
+                        }
+                    },
                     request,
                 )?;
                 self.handle_request(sender, reciver, new_request)
@@ -208,22 +226,33 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
         match self.handle_request(request)? {
             Command::Request(req) => return Ok(req),
             Command::Response(res) => sender.send(Command::Response(res))?,
-            _ => unimplemented!(),
+            _ => {
+                error!("Unimplemented");
+                return Err(anyhow!("Unimplemented"));
+            }
         };
 
         loop {
             match reciver.try_recv() {
                 Ok(request) => {
-                    match self.handle_request(request)? {
-                        Command::Request(req) => {
+                    match self.handle_request(request) {
+                        Ok(Command::Request(req)) => {
                             let mut core = self.session.core(0)?;
                             core.clear_all_hw_breakpoints()?;
                             self.breakpoints = HashMap::new();
 
                             return Ok(req);
                         }
-                        Command::Response(res) => sender.send(Command::Response(res))?,
-                        _ => unimplemented!(),
+                        Ok(Command::Response(res)) => sender.send(Command::Response(res))?,
+                        Ok(_) => {
+                            error!("Unimplemented");
+                            return Err(anyhow!("Unimplemented"));
+                        }
+                        Err(err) => {
+                            sender.send(Command::Response(DebugResponse::Error {
+                                message: format!("{:?}", err),
+                            }))?;
+                        }
                     };
                 }
                 Err(err) => {
@@ -271,7 +300,13 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
 
             let mut hit_breakpoint_ids = vec![];
             match self.breakpoints.get(&pc) {
-                Some(bkpt) => hit_breakpoint_ids.push(bkpt.id.unwrap() as u32),
+                Some(bkpt) => hit_breakpoint_ids.push(match bkpt.id {
+                    Some(val) => val,
+                    None => {
+                        error!("Breakpoint id is required");
+                        return Err(anyhow!("Breakpoint id is required"));
+                    }
+                } as u32),
                 None => (),
             };
 
@@ -444,7 +479,13 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
                 self.debug_info.dwarf,
                 &self.cwd,
                 &path,
-                NonZeroU64::new(address as u64).unwrap(),
+                match NonZeroU64::new(address as u64) {
+                    Some(val) => val,
+                    None => {
+                        error!("Could not convert address to NonZeroU64");
+                        return Err(anyhow!("Could not convert address to NonZeroU64"));
+                    }
+                },
                 None,
             )?
             .expect("Could not file location form source file line number")
@@ -702,7 +743,13 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
                 self.debug_info.dwarf,
                 &self.cwd,
                 &source_file,
-                NonZeroU64::new(bkpt.line as u64).unwrap(),
+                match NonZeroU64::new(bkpt.line as u64) {
+                    Some(val) => val,
+                    None => {
+                        error!("Could not convert to NonZeroU64");
+                        return Err(anyhow!("Could not convert to NonZeroU64"));
+                    }
+                },
                 bkpt.column.map(|c| NonZeroU64::new(c as u64).unwrap()),
             )? {
                 Some(address) => {
@@ -763,7 +810,14 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
     fn dap_scopes(&mut self, frame_id: i64) -> Result<Command> {
         match &self.scopes {
             Some(scopes) => Ok(Command::Response(DebugResponse::DAPScopes {
-                scopes: scopes.get(&frame_id).unwrap().clone(),
+                scopes: match scopes.get(&frame_id) {
+                    Some(val) => val,
+                    None => {
+                        error!("Could not find scope");
+                        return Err(anyhow!("Could not find scope"));
+                    }
+                }
+                .clone(),
             })),
             None => {
                 self.set_stack_trace()?;
@@ -776,7 +830,13 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
     fn dap_variables(&mut self, vars_id: i64) -> Result<Command> {
         match &self.variables {
             Some(variables) => Ok(Command::Response(DebugResponse::DAPVariables {
-                variables: variables.get(&vars_id).unwrap().clone(),
+                variables: match variables.get(&vars_id) {
+                    Some(val) => val.clone(),
+                    None => {
+                        error!("Missing variables");
+                        return Err(anyhow!("Missing variables"));
+                    }
+                },
             })),
             None => {
                 self.set_stack_trace()?;
@@ -1266,7 +1326,7 @@ impl Variable {
                 self.value = "< OptimizedOut >".to_owned();
                 match &enumeration_type_value.variant {
                     EvaluatorValue::Value(base_type_value, _) => {
-                        let variant = get_udata(base_type_value.clone());
+                        let variant = get_udata(base_type_value.clone())?;
                         for enu in &enumeration_type_value.enumerators {
                             if enu.const_value == variant {
                                 match &enu.name {
@@ -1276,7 +1336,10 @@ impl Variable {
                             }
                         }
                     }
-                    _ => unimplemented!(),
+                    _ => {
+                        error!("Unimplemented");
+                        return Err(anyhow!("Unimplemented"));
+                    }
                 };
             }
             EvaluatorValue::Union(union_type_value) => {
@@ -1294,7 +1357,13 @@ impl Variable {
                     Some(name) => {
                         let re = Regex::new(r"__\d+").unwrap();
                         if re.is_match(&name) {
-                            let index = name[2..].parse::<i32>().unwrap();
+                            let index = match name[2..].parse::<i32>() {
+                                Ok(val) => val,
+                                Err(err) => {
+                                    error!("{:?}", err);
+                                    return Err(anyhow!("{:?}", err));
+                                }
+                            };
                             kind = VariableKind::Indexed;
                             Some(format!("{}", index))
                         } else {

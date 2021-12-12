@@ -7,9 +7,10 @@ use super::{
 };
 use crate::debugger::StackFrame;
 use crate::debugger::Variable;
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use debugserver_types::Breakpoint;
+use log::error;
 use probe_rs::{CoreStatus, HaltReason};
 use rustyline::Editor;
 use std::thread;
@@ -184,9 +185,18 @@ impl Cli {
             } => self.handle_stack_response(stack_pointer, stack),
             DebugResponse::Error { message } => self.handle_error_response(message),
             DebugResponse::SetCWD => self.handle_set_cwd_response(),
-            DebugResponse::DAPStackFrames{ stack_frames: _} => unreachable!(),
-            DebugResponse::DAPScopes{ scopes: _} => unreachable!(),
-            DebugResponse::DAPVariables{ variables: _} => unreachable!(),
+            DebugResponse::DAPStackFrames { stack_frames: _ } => {
+                error!("Unreachable");
+                return Err(anyhow!("Unreachable"));
+            }
+            DebugResponse::DAPScopes { scopes: _ } => {
+                error!("Unreachable");
+                return Err(anyhow!("Unreachable"));
+            }
+            DebugResponse::DAPVariables { variables: _ } => {
+                error!("Unreachable");
+                return Err(anyhow!("Unreachable"));
+            }
         };
 
         Ok(false)
@@ -328,7 +338,6 @@ impl Cli {
         //println!("Location: {:?}", variable.location);
     }
 
-
     fn handle_variables_response(&self, variables: Vec<Variable>) {
         println!("Local variables:");
         for var in variables {
@@ -348,7 +357,7 @@ impl Cli {
     }
 
     fn handle_set_breakpoints_response(&self, _breakpoints: Vec<Breakpoint>) {
-        unreachable!();
+        error!("Unreachable");
     }
 
     fn handle_clear_breakpoint_response(&self) {

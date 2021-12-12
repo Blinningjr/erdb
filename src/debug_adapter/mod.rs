@@ -7,7 +7,7 @@ use std::thread;
 
 use anyhow::{anyhow, Result};
 
-use log::{debug, info, trace, warn};
+use log::{debug, error, info, trace, warn};
 
 use debugserver_types::{
     Breakpoint, Capabilities, ContinueResponseBody, DisconnectArguments, EvaluateResponseBody,
@@ -156,7 +156,7 @@ impl<R: Read, W: Write> DebugAdapter<R, W> {
             // Check for events
             match self.receiver.try_recv() {
                 Ok(Command::Event(event)) => self.handle_event_command(event)?,
-                Ok(_) => unreachable!(),
+                Ok(_) => error!("Unreachable"),
                 Err(_) => (),
             };
 
@@ -178,8 +178,14 @@ impl<R: Read, W: Write> DebugAdapter<R, W> {
     fn handle_dap_message(&mut self, message: DebugAdapterMessage) -> Result<bool> {
         match message {
             DebugAdapterMessage::Request(req) => self.handle_dap_request(req),
-            DebugAdapterMessage::Response(_resp) => unimplemented!(),
-            DebugAdapterMessage::Event(_event) => unimplemented!(),
+            DebugAdapterMessage::Response(_resp) => {
+                error!("Unimplemented");
+                return Err(anyhow!("Unimplemented"));
+            }
+            DebugAdapterMessage::Event(_event) => {
+                error!("Unimplemented");
+                return Err(anyhow!("Unimplemented"));
+            }
         }
     }
 
@@ -197,13 +203,19 @@ impl<R: Read, W: Write> DebugAdapter<R, W> {
             "disconnect" => self.handle_disconnect_dap_request(&request),
             "continue" => self.handle_continue_dap_request(&request),
             "scopes" => self.handle_scopes_dap_request(&request),
-            "source" => unimplemented!(), // TODO
+            "source" => {
+                error!("Unimpleemted");
+                Ok(false) // NOTE: Return Error maybe
+            }
             "variables" => self.handle_variables_dap_request(&request),
             "next" => self.handle_next_dap_request(&request),
             "stepIn" => self.handle_next_dap_request(&request), // TODO
             "stepOut" => self.handle_next_dap_request(&request), // TODO
             "evaluate" => self.handle_evaluate_dap_request(&request),
-            _ => panic!("command: {}", request.command),
+            _ => {
+                error!("command: {}", request.command);
+                Ok(false) // NOTE: Return Error maybe
+            }
         };
 
         match result {
@@ -269,7 +281,8 @@ impl<R: Read, W: Write> DebugAdapter<R, W> {
     }
 
     fn handle_launch_dap_request(&mut self, _request: &Request) -> Result<bool> {
-        unimplemented!();
+        error!("Unimplemented");
+        Ok(false) // NOTE: return error maybe
     }
 
     fn handle_attach_dap_request(&mut self, request: &Request) -> Result<bool> {
@@ -419,9 +432,12 @@ impl<R: Read, W: Write> DebugAdapter<R, W> {
 
         // Get stack trace DebugResponse
         let ack = self.retrieve_response()?;
-        let stack_frames= match ack {
+        let stack_frames = match ack {
             DebugResponse::DAPStackFrames { stack_frames } => stack_frames,
-            _ => unreachable!(),
+            _ => {
+                error!("Unreachable");
+                return Err(anyhow!("Unreachable"));
+            }
         };
 
         let total_frames = stack_frames.len() as i64;
@@ -458,9 +474,11 @@ impl<R: Read, W: Write> DebugAdapter<R, W> {
         let ack = self.retrieve_response()?;
         let scopes = match ack {
             DebugResponse::DAPScopes { scopes } => scopes,
-            _ => unreachable!(),
+            _ => {
+                error!("Unreachable");
+                vec![]
+            }
         };
-
 
         let body = debugserver_types::ScopesResponseBody { scopes: scopes };
 
@@ -484,35 +502,39 @@ impl<R: Read, W: Write> DebugAdapter<R, W> {
         debug!("args: {:?}", args);
 
         // Get stack trace
-        self.sender.send(DebugRequest::DAPVariables {id: args.variables_reference})?;
+        self.sender.send(DebugRequest::DAPVariables {
+            id: args.variables_reference,
+        })?;
 
         // Get stack trace DebugResponse
         let ack = self.retrieve_response()?;
         let vars = match ack {
             DebugResponse::DAPVariables { variables } => variables,
-            _ => unreachable!(),
+            _ => {
+                error!("Unreachable");
+                return Err(anyhow!("Unreachable"));
+            }
         };
 
         // Parse variables
         let mut variables = vec![];
 
-            for var in &vars {
-                let (indexed_variables, named_variables) = var.get_num_diff_children();
-                variables.push(debugserver_types::Variable {
-                    evaluate_name: None, //Option<String>,
-                    indexed_variables: Some(indexed_variables),
-                    name: match &var.name {
-                        Some(name) => name.clone(),
-                        None => "<unknown>".to_string(),
-                    },
-                    named_variables: Some(named_variables),
-                    presentation_hint: None,
-                    type_: Some(var.type_.clone()),
-                    value: var.value_to_string(),
-                    variables_reference: var.id, // i64,
-                });
-            }
-        
+        for var in &vars {
+            let (indexed_variables, named_variables) = var.get_num_diff_children();
+            variables.push(debugserver_types::Variable {
+                evaluate_name: None, //Option<String>,
+                indexed_variables: Some(indexed_variables),
+                name: match &var.name {
+                    Some(name) => name.clone(),
+                    None => "<unknown>".to_string(),
+                },
+                named_variables: Some(named_variables),
+                presentation_hint: None,
+                type_: Some(var.type_.clone()),
+                value: var.value_to_string(),
+                variables_reference: var.id, // i64,
+            });
+        }
 
         let body = debugserver_types::VariablesResponseBody {
             variables: variables,
@@ -654,7 +676,10 @@ impl<R: Read, W: Write> DebugAdapter<R, W> {
                 let ack = self.retrieve_response()?;
                 let breakpoints = match ack {
                     DebugResponse::SetBreakpoints { breakpoints } => breakpoints,
-                    _ => panic!("unreachable: {:#?}", ack), //unreachable!(),
+                    _ => {
+                        error!("Unreachable: {:#?}", ack);
+                        vec![]
+                    }
                 };
                 breakpoints
             }
@@ -692,7 +717,10 @@ impl<R: Read, W: Write> DebugAdapter<R, W> {
                     return Ok(response);
                 }
                 Command::Event(event) => self.handle_event_command(event)?,
-                _ => unreachable!(),
+                _ => {
+                    error!("Unreachable");
+                    return Err(anyhow!("Unreachable"));
+                }
             };
         }
     }
@@ -766,7 +794,13 @@ pub enum DebugAdapterMessage {
 }
 
 pub fn get_arguments<T: DeserializeOwned>(req: &Request) -> Result<T> {
-    let value = req.arguments.as_ref().unwrap();
+    let value = match req.arguments.as_ref() {
+        Some(val) => val,
+        None => {
+            error!("Expacted arguments");
+            return Err(anyhow!("Expected arguments"));
+        }
+    };
     from_value(value.to_owned()).map_err(|e| e.into())
 }
 

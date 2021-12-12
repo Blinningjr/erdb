@@ -23,8 +23,10 @@ use anyhow::{anyhow, Context, Result};
 
 use std::str::FromStr;
 
+use chrono::Local;
 use env_logger::*;
-use log::LevelFilter;
+use log::{error, LevelFilter};
+use std::io::Write;
 
 #[derive(Debug)]
 enum Mode {
@@ -93,6 +95,17 @@ fn main() -> Result<()> {
 
     let mut builder = Builder::from_default_env();
     builder
+        .format(|buf, record| {
+            writeln!(
+                buf,
+                "{} {}:{} [{}] - {}",
+                Local::now().format("%Y-%m-%dT%H:%M:%S"),
+                record.file().unwrap_or("unknown"),
+                record.line().unwrap_or(0),
+                record.level(),
+                record.args()
+            )
+        })
         .filter(None, log_level)
         .filter_module("probe_rs", probe_rs_log_level)
         .init();
@@ -179,7 +192,7 @@ where
     }
 
     if i > 1 {
-        panic!("Found more then one unit in range {}", i);
+        error!("Found more then one unit in range {}", i);
     }
 
     return match res {
