@@ -147,7 +147,7 @@ impl Cli {
     }
 
     fn handle_halted_event(&self, pc: u32, reason: HaltReason) {
-        println!("Core halted a pc: {:#010x}, because: {:?}", pc, reason);
+        println!("Core halted at pc: {:#010x}, because: {:?}", pc, reason);
     }
 
     fn handle_response(&mut self, response: DebugResponse) -> Result<bool> {
