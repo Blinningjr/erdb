@@ -216,6 +216,17 @@ impl Commands {
                         Err(anyhow!("Requires a path as a argument"))
                     },
                 },
+                CommandInfo {
+                    name: "cycle",
+                    description: "Print the value of the cycle counter",
+                    parser: |_args| Ok(DebugRequest::CycleCounter),
+                },
+                CommandInfo {
+                    name: "profile",
+                    description:
+                        "Trace cycle counter at breakpoint instructions until `bkpt #2` is reached",
+                    parser: |_args| Ok(DebugRequest::Halt),
+                },
             ],
         }
     }

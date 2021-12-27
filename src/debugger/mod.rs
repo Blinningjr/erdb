@@ -358,6 +358,8 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
             DebugRequest::DAPScopes { frame_id } => self.dap_scopes(frame_id),
             DebugRequest::DAPVariables { id } => self.dap_variables(id),
 
+            DebugRequest::CycleCounter => self.cycle_counter_command(),
+
             _ => Ok(Command::Request(request)),
         }
     }
@@ -1014,6 +1016,16 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
         self.scopes = Some(scopes);
         self.variables = Some(variables);
         Ok(())
+    }
+
+    // A simple example of a custom command
+    fn cycle_counter_command(&mut self) -> Result<Command> {
+        let mut core = self.session.core(0)?;
+        let mut buff: Vec<u32> = vec![0; 1];
+        core.read_32(0xe0001004, &mut buff)?;
+        println!("cycle counter: {}", buff[0]);
+        drop(core);
+        self.read_command(0xe0001004, 4)
     }
 }
 
