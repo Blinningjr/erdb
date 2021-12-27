@@ -1030,8 +1030,10 @@ fn continue_fix(
 
                     let mut code = [0u8; 2];
                     core.read_8(pc_val, &mut code)?;
-                    if code[1] == 190 && code[0] == 0 {
-                        // bkpt == 0xbe00 for coretex-m // TODO: is the code[0] == 0 needed?
+                    if code[1] == 0b1011_1110 {
+                        // 0b1011_1110 is the binary encoding of the BKPT #NR instruction
+                        // code[0] holds the breakpoint number #NR (0..255)
+                        // For now we treat all breakpoints equally
                         // NOTE: Increment with 2 because bkpt is 2 byte instruction.
                         let step_pc = pc_val + 0x2; // TODO: Fix for other CPU types.
                         core.write_core_reg(pc.into(), step_pc)?;
