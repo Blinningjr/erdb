@@ -64,4 +64,5 @@ pub enum DebugRequest {
         id: i64,
     },
     CycleCounter,
+    Trace,
 }

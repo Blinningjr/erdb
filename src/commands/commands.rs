@@ -222,10 +222,10 @@ impl Commands {
                     parser: |_args| Ok(DebugRequest::CycleCounter),
                 },
                 CommandInfo {
-                    name: "profile",
+                    name: "trace",
                     description:
                         "Trace cycle counter at breakpoint instructions until `bkpt #2` is reached",
-                    parser: |_args| Ok(DebugRequest::Halt),
+                    parser: |_args| Ok(DebugRequest::Trace),
                 },
             ],
         }
