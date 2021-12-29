@@ -30,7 +30,11 @@ To see the available commands type `help` in the CLI.
 ### Example
 ```
 cargo run -- --chip STM32F411RETx --work-directory /home/niklas/Desktop/exjobb/nucleo64-rtic-examples --elf-file /home/niklas/Desktop/exjobb/nucleo64-rtic-examples/target/thumbv7em-none-eabi/debug/nucleo-rtic-blinking-led
+>> flash
 ```
+
+Notice: You need first to compile the corresponding binary and flash it to the target (if the binary has been changed).
+
 
 ## License
 Licensed under either of

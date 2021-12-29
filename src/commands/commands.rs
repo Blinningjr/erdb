@@ -224,7 +224,7 @@ impl Commands {
                 CommandInfo {
                     name: "trace",
                     description:
-                        "Trace cycle counter at breakpoint instructions until `bkpt #2` is reached",
+                        "Trace cycle counter at breakpoint instructions until `bkpt_end` is reached",
                     parser: |_args| Ok(DebugRequest::Trace),
                 },
             ],
