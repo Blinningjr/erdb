@@ -56,11 +56,11 @@ impl DebugHandler {
     pub fn run(
         &mut self,
         mut sender: Sender<Command>,
-        mut reciver: Receiver<DebugRequest>,
+        mut receiver: Receiver<DebugRequest>,
     ) -> Result<()> {
         loop {
-            let request = reciver.recv()?;
-            let (exit, response) = match self.handle_request(&mut sender, &mut reciver, request) {
+            let request = receiver.recv()?;
+            let (exit, response) = match self.handle_request(&mut sender, &mut receiver, request) {
                 Ok(val) => val,
                 Err(err) => {
                     sender.send(Command::Response(DebugResponse::Error {
@@ -80,7 +80,7 @@ impl DebugHandler {
     fn handle_request(
         &mut self,
         sender: &mut Sender<Command>,
-        reciver: &mut Receiver<DebugRequest>,
+        receiver: &mut Receiver<DebugRequest>,
         request: DebugRequest,
     ) -> Result<(bool, DebugResponse)> {
         match request {
@@ -113,7 +113,7 @@ impl DebugHandler {
 
                 let new_request = init(
                     sender,
-                    reciver,
+                    receiver,
                     match self.config.elf_file_path.clone() {
                         Some(val) => val,
                         None => {
@@ -138,7 +138,7 @@ impl DebugHandler {
                     },
                     request,
                 )?;
-                self.handle_request(sender, reciver, new_request)
+                self.handle_request(sender, receiver, new_request)
             }
         }
     }
@@ -146,7 +146,7 @@ impl DebugHandler {
 
 pub fn init(
     sender: &mut Sender<Command>,
-    reciver: &mut Receiver<DebugRequest>,
+    receiver: &mut Receiver<DebugRequest>,
     file_path: PathBuf,
     probe_number: usize,
     chip: String,
@@ -194,9 +194,10 @@ pub fn init(
         scopes: None,
         variables: None,
         id_gen: IdGen::new(),
+        trace: false,
     };
 
-    debugger.run(sender, reciver, request)
+    debugger.run(sender, receiver, request)
 }
 
 struct Debugger<'a, R: Reader<Offset = usize>> {
@@ -214,13 +215,14 @@ struct Debugger<'a, R: Reader<Offset = usize>> {
     stack_frames: Option<Vec<debugserver_types::StackFrame>>,
     scopes: Option<HashMap<i64, Vec<debugserver_types::Scope>>>,
     variables: Option<HashMap<i64, Vec<Variable>>>,
+    trace: bool,
 }
 
 impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
     pub fn run(
         &mut self,
         sender: &mut Sender<Command>,
-        reciver: &mut Receiver<DebugRequest>,
+        receiver: &mut Receiver<DebugRequest>,
         request: DebugRequest,
     ) -> Result<DebugRequest> {
         match self.handle_request(request)? {
@@ -233,8 +235,9 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
         };
 
         loop {
-            match reciver.try_recv() {
+            match receiver.try_recv() {
                 Ok(request) => {
+                    // we have recieved a request (either from CLI or DAP)
                     match self.handle_request(request) {
                         Ok(Command::Request(req)) => {
                             let mut core = self.session.core(0)?;
@@ -257,6 +260,7 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
                 }
                 Err(err) => {
                     match err {
+                        // commands to process, to check if halted
                         TryRecvError::Empty => self.check_halted(sender)?,
                         TryRecvError::Disconnected => {
                             let mut core = self.session.core(0)?;
@@ -283,13 +287,13 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
         let delta = Duration::from_millis(400);
         if self.running && self.check_time.elapsed() > delta {
             self.check_time = Instant::now();
-            self.send_halt_event(sender)?;
+            self.process_halt_event(sender)?;
         }
 
         Ok(())
     }
 
-    fn send_halt_event(&mut self, sender: &mut Sender<Command>) -> Result<()> {
+    fn process_halt_event(&mut self, sender: &mut Sender<Command>) -> Result<()> {
         let mut core = self.session.core(0)?;
         let status = core.status()?;
 
@@ -310,14 +314,20 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
                 None => (),
             };
 
-            sender.send(Command::Event(DebugEvent::Halted {
-                pc: pc,
-                reason: reason,
-                hit_breakpoint_ids: Some(hit_breakpoint_ids),
-            }))?;
+            if self.trace {
+                drop(core);
+                self.trace_event(pc)
+            } else {
+                sender.send(Command::Event(DebugEvent::Halted {
+                    pc: pc,
+                    reason: reason,
+                    hit_breakpoint_ids: Some(hit_breakpoint_ids),
+                }))?;
+                Ok(())
+            }
+        } else {
+            Ok(())
         }
-
-        Ok(())
     }
 
     fn handle_request(&mut self, request: DebugRequest) -> Result<Command> {
@@ -357,6 +367,9 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
             DebugRequest::DAPStackFrames => self.dap_stack_frames(),
             DebugRequest::DAPScopes { frame_id } => self.dap_scopes(frame_id),
             DebugRequest::DAPVariables { id } => self.dap_variables(id),
+
+            DebugRequest::CycleCounter => self.cycle_counter_command(),
+            DebugRequest::Trace => self.trace_command(),
 
             _ => Ok(Command::Request(request)),
         }
@@ -1015,6 +1028,75 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
         self.variables = Some(variables);
         Ok(())
     }
+
+    // A simple example of a custom command
+    fn cycle_counter_command(&mut self) -> Result<Command> {
+        let mut core = self.session.core(0)?;
+        let (pc_val, cycle_counter) = read_cycle_counter(&mut core)?;
+        println!("pc: {:#010x}, cycle counter: {}", pc_val, cycle_counter);
+        drop(core);
+        self.status_command()
+    }
+
+    // A more advanced stateful command
+    fn trace_command(&mut self) -> Result<Command> {
+        self.trace = true;
+        self.continue_command()
+    }
+
+    fn trace_event(&mut self, _pc_val: u32) -> Result<()> {
+        let mut core = self.session.core(0)?;
+        let (pc_val, cycle_counter) = read_cycle_counter(&mut core)?;
+        println!("pc: {:#010x}, cycle counter: {}", pc_val, cycle_counter);
+
+        match read_bkpt(&mut core, pc_val) {
+            Ok(nr) => {
+                // intermediate trace point
+                let bkpt_type = match nr {
+                    1 => "end",
+                    2 => "enter",
+                    3 => "exit",
+                    _ => "other",
+                };
+                println!("Halted on: {}", bkpt_type);
+                if nr == 1 {
+                    // trace end terminated
+
+                    self.trace = false;
+                    self.running = false;
+                    Ok(())
+                } else {
+                    // intermediate break point
+                    // continue
+                    drop(core);
+                    self.continue_command()?;
+                    Ok(())
+                }
+            }
+
+            Err(err) => Err(anyhow!(err)),
+        }
+    }
+}
+
+fn read_cycle_counter(core: &mut probe_rs::Core) -> Result<(u32, u32), probe_rs::Error> {
+    let mut buff: Vec<u32> = vec![0; 1];
+    core.read_32(0xe0001004, &mut buff)?;
+    let pc = core.registers().program_counter();
+    let pc_val = core.read_core_reg(pc)?;
+    Ok((pc_val, buff[0]))
+}
+
+fn read_bkpt(core: &mut probe_rs::Core, pc_val: u32) -> Result<u8, probe_rs::Error> {
+    let mut code = [0u8; 2];
+    core.read_8(pc_val, &mut code)?;
+    if code[1] == 0b1011_1110 {
+        // 0b1011_1110 is the binary encoding of the BKPT #NR instruction
+        // code[0] holds the breakpoint number #NR (0..255)
+        Ok(code[0])
+    } else {
+        Err(probe_rs::Error::Other(anyhow!("Breakpoint expected")))
+    }
 }
 
 fn continue_fix(
@@ -1028,25 +1110,26 @@ fn continue_fix(
                     let pc = core.registers().program_counter();
                     let pc_val = core.read_core_reg(pc)?;
 
-                    let mut code = [0u8; 2];
-                    core.read_8(pc_val, &mut code)?;
-                    if code[1] == 190 && code[0] == 0 {
-                        // bkpt == 0xbe00 for coretex-m // TODO: is the code[0] == 0 needed?
-                        // NOTE: Increment with 2 because bkpt is 2 byte instruction.
-                        let step_pc = pc_val + 0x2; // TODO: Fix for other CPU types.
-                        core.write_core_reg(pc.into(), step_pc)?;
+                    match read_bkpt(core, pc_val) {
+                        Ok(_) => {
+                            // For now we treat all breakpoints equally
+                            // NOTE: Increment with 2 because bkpt is 2 byte instruction.
+                            let step_pc = pc_val + 0x2; // TODO: Fix for other CPU types.
+                            core.write_core_reg(pc.into(), step_pc)?;
 
-                        return Ok(step_pc);
-                    } else {
-                        match breakpoints.get(&pc_val) {
-                            Some(_bkpt) => {
-                                core.clear_hw_breakpoint(pc_val)?;
-                                let pc = core.step()?.pc;
-                                core.set_hw_breakpoint(pc_val)?;
-                                return Ok(pc);
-                            }
-                            None => (),
-                        };
+                            return Ok(step_pc);
+                        }
+                        Err(_) => {
+                            match breakpoints.get(&pc_val) {
+                                Some(_bkpt) => {
+                                    core.clear_hw_breakpoint(pc_val)?;
+                                    let pc = core.step()?.pc;
+                                    core.set_hw_breakpoint(pc_val)?;
+                                    return Ok(pc);
+                                }
+                                None => (),
+                            };
+                        }
                     }
                 }
                 _ => (),

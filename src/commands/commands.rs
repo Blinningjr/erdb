@@ -1,34 +1,29 @@
-use super::{
-    Command,
-    debug_request::DebugRequest,
-};
+use super::{debug_request::DebugRequest, Command};
 
-use anyhow::{ Result, anyhow };
+use anyhow::{anyhow, Result};
 
 use std::path::PathBuf;
 
-
-
 struct CommandInfo {
-    pub name:           &'static str,
-    pub description:    &'static str,
+    pub name: &'static str,
+    pub description: &'static str,
     pub parser: fn(args: &[&str]) -> Result<DebugRequest>,
 }
 
-
 pub struct Commands {
-    commands:   Vec<CommandInfo>,
+    commands: Vec<CommandInfo>,
 }
 
 impl Commands {
     pub fn new() -> Commands {
         Commands {
-            commands: vec!(
+            commands: vec![
                 CommandInfo {
                     name: "attach",
-                    description: "Set the current work directory",
+                    description: "Attach the debugger to the target",
                     parser: |_args| {
-                        Ok(DebugRequest::Attach {// TODO: Parse arguments
+                        Ok(DebugRequest::Attach {
+                            // TODO: Parse arguments
                             reset: false,
                             reset_and_halt: false,
                         })
@@ -49,23 +44,17 @@ impl Commands {
                 CommandInfo {
                     name: "stack",
                     description: "Prints the current stack values",
-                    parser: |_args| {
-                        Ok(DebugRequest::Stack)
-                    },
+                    parser: |_args| Ok(DebugRequest::Stack),
                 },
                 CommandInfo {
                     name: "code",
                     description: "Prints the current code",
-                    parser: |_args| {
-                        Ok(DebugRequest::Code)
-                    },
+                    parser: |_args| Ok(DebugRequest::Code),
                 },
                 CommandInfo {
                     name: "clear-all-breakpoints",
                     description: "Removes all hardware breakpoints",
-                    parser: |_args| {
-                        Ok(DebugRequest::ClearAllBreakpoints)
-                    },
+                    parser: |_args| Ok(DebugRequest::ClearAllBreakpoints),
                 },
                 CommandInfo {
                     name: "clear-breakpoint",
@@ -73,9 +62,7 @@ impl Commands {
                     parser: |args| {
                         if args.len() > 0 {
                             let address = parse_u32_from_str(args[0])?;
-                            return Ok(DebugRequest::ClearBreakpoint {
-                                address: address,
-                            });
+                            return Ok(DebugRequest::ClearBreakpoint { address: address });
                         }
                         Err(anyhow!("Requires a string as a argument"))
                     },
@@ -102,9 +89,7 @@ impl Commands {
                 CommandInfo {
                     name: "registers",
                     description: "Print all register values",
-                    parser: |_args| {
-                        Ok(DebugRequest::Registers)
-                    },
+                    parser: |_args| Ok(DebugRequest::Registers),
                 },
                 CommandInfo {
                     name: "variable",
@@ -112,9 +97,7 @@ impl Commands {
                     parser: |args| {
                         if args.len() > 0 {
                             let name = args[0].to_string();
-                            return Ok(DebugRequest::Variable {
-                                name: name,
-                            });
+                            return Ok(DebugRequest::Variable { name: name });
                         }
                         Err(anyhow!("Requires a string as a argument"))
                     },
@@ -122,9 +105,7 @@ impl Commands {
                 CommandInfo {
                     name: "variables",
                     description: "Print all local variables",
-                    parser: |_args| {
-                        Ok(DebugRequest::Variables)
-                    },
+                    parser: |_args| Ok(DebugRequest::Variables),
                 },
                 CommandInfo {
                     name: "set-chip",
@@ -132,9 +113,7 @@ impl Commands {
                     parser: |args| {
                         if args.len() > 0 {
                             let chip = args[0].to_string();
-                            return Ok(DebugRequest::SetChip {
-                                chip: chip,
-                            });
+                            return Ok(DebugRequest::SetChip { chip: chip });
                         }
                         Err(anyhow!("Requires a string as a argument"))
                     },
@@ -145,9 +124,7 @@ impl Commands {
                     parser: |args| {
                         if args.len() > 0 {
                             let number = parse_u32_from_str(args[0])? as usize;
-                            return Ok(DebugRequest::SetProbeNumber {
-                                number: number,
-                            });
+                            return Ok(DebugRequest::SetProbeNumber { number: number });
                         }
                         Err(anyhow!("Requires a boolean as a argument"))
                     },
@@ -155,9 +132,7 @@ impl Commands {
                 CommandInfo {
                     name: "stack-trace",
                     description: "Print stack trace",
-                    parser: |_args| {
-                        Ok(DebugRequest::StackTrace)
-                    },
+                    parser: |_args| Ok(DebugRequest::StackTrace),
                 },
                 CommandInfo {
                     name: "read",
@@ -187,7 +162,7 @@ impl Commands {
                         }
 
                         Ok(DebugRequest::Reset {
-                            reset_and_halt: reset_and_halt
+                            reset_and_halt: reset_and_halt,
                         })
                     },
                 },
@@ -200,43 +175,35 @@ impl Commands {
                             reset_and_halt = parse_bool(args[0])?;
                         }
 
-                        Ok(DebugRequest::Flash { reset_and_halt: reset_and_halt })
+                        Ok(DebugRequest::Flash {
+                            reset_and_halt: reset_and_halt,
+                        })
                     },
                 },
                 CommandInfo {
                     name: "step",
                     description: "Step one assembly instruction",
-                    parser: |_args| {
-                        Ok(DebugRequest::Step)
-                    },
+                    parser: |_args| Ok(DebugRequest::Step),
                 },
                 CommandInfo {
                     name: "status",
                     description: "Print the status of the core",
-                    parser: |_args| {
-                        Ok(DebugRequest::Status)
-                    },
+                    parser: |_args| Ok(DebugRequest::Status),
                 },
                 CommandInfo {
                     name: "exit",
                     description: "Exit debugger",
-                    parser: |_args| {
-                        Ok(DebugRequest::Exit)
-                    },
+                    parser: |_args| Ok(DebugRequest::Exit),
                 },
                 CommandInfo {
                     name: "continue",
                     description: "Continue the program",
-                    parser: |_args| {
-                        Ok(DebugRequest::Continue)
-                    },
+                    parser: |_args| Ok(DebugRequest::Continue),
                 },
                 CommandInfo {
                     name: "halt",
                     description: "Halt the core",
-                    parser: |_args| {
-                        Ok(DebugRequest::Halt)
-                    },
+                    parser: |_args| Ok(DebugRequest::Halt),
                 },
                 CommandInfo {
                     name: "set-binary",
@@ -249,29 +216,40 @@ impl Commands {
                         Err(anyhow!("Requires a path as a argument"))
                     },
                 },
-            ),
+                CommandInfo {
+                    name: "cycle",
+                    description: "Print the value of the cycle counter",
+                    parser: |_args| Ok(DebugRequest::CycleCounter),
+                },
+                CommandInfo {
+                    name: "trace",
+                    description:
+                        "Trace cycle counter at breakpoint instructions until `bkpt_end` is reached",
+                    parser: |_args| Ok(DebugRequest::Trace),
+                },
+            ],
         }
     }
-
 
     pub fn parse_command(&self, line: &str) -> Result<Command> {
         let mut command_parts = line.split_whitespace();
         if let Some(command) = command_parts.next() {
-            
             let cmd = self.commands.iter().find(|c| c.name == command);
-            
+
             if let Some(cmd) = cmd {
                 let remaining_args: Vec<&str> = command_parts.collect();
 
                 return Ok(Command::Request((cmd.parser)(&remaining_args)?));
             } else {
-                return Err(anyhow!("Unknown command '{}'\n\tEnter 'help' for a list of commands", command));
+                return Err(anyhow!(
+                    "Unknown command '{}'\n\tEnter 'help' for a list of commands",
+                    command
+                ));
             }
         }
 
         Err(anyhow!("Empty Command"))
     }
-
 
     pub fn check_if_help(&self, line: &str) -> Option<String> {
         let mut command_parts = line.split_whitespace();
@@ -279,10 +257,7 @@ impl Commands {
             if command == "help" {
                 let mut help_string = format!("Available commands:");
                 for cmd in &self.commands {
-                    help_string = format!("{}\n\t- {}: {}",
-                                          help_string,
-                                          cmd.name,
-                                          cmd.description);
+                    help_string = format!("{}\n\t- {}: {}", help_string, cmd.name, cmd.description);
                 }
                 return Some(help_string);
             }
@@ -292,16 +267,14 @@ impl Commands {
     }
 }
 
-
 fn parse_u32_from_str(s: &str) -> Result<u32> {
     if s.starts_with("0x") {
         let without_prefix = s.trim_start_matches("0x");
         return Ok(u32::from_str_radix(without_prefix, 16)?);
     } else {
-        return Ok(u32::from_str_radix(s, 10)?); 
+        return Ok(u32::from_str_radix(s, 10)?);
     };
 }
-
 
 fn parse_bool(s: &str) -> Result<bool> {
     match s {
@@ -310,4 +283,3 @@ fn parse_bool(s: &str) -> Result<bool> {
         _ => Err(anyhow!("Expected a boolean argument")),
     }
 }
-

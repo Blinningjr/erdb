@@ -1,0 +1,12 @@
+{
+    "cSpell.ignoreWords": [
+        "BKPT",
+        "debugserver",
+        "gimli",
+        "memmap",
+        "mmap",
+        "rustyline",
+        "structopt",
+        "udata"
+    ]
+}

@@ -49,7 +49,10 @@ impl FromStr for Mode {
 }
 
 #[derive(Debug, StructOpt)]
-#[structopt(name = "example", about = "An example of StructOpt usage.")]
+#[structopt(
+    name = "embedded-rust-debugger",
+    about = "A simple and extendable debugger for embedded Rust."
+)]
 pub struct Opt {
     /// Set Mode
     #[structopt(short = "m", long = "mode", default_value = "Debug")]
@@ -63,7 +66,7 @@ pub struct Opt {
     #[structopt(short = "elf", long = "elf-file")]
     elf_file_path: Option<PathBuf>,
 
-    /// Current working direcotry
+    /// Current working directory
     #[structopt(short = "wd", long = "work-directory")]
     work_directory: Option<String>,
 
