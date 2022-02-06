@@ -11,3 +11,6 @@ Cargo.lock
 
 # Ignore my test script
 test.sh
+
+# Ignore vscode editor stuff
+.vscode/
