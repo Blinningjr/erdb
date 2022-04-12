@@ -1,7 +1,18 @@
 mod cli;
 mod commands;
-mod debug_adapter;
+//mod debug_adapter;
 mod debugger;
+
+use object::File;
+
+use gimli::EndianReader;
+
+use commands::{
+    debug_request::DebugRequest,
+    debug_response::DebugResponse,
+    debug_event::DebugEvent,
+    commands::Commands,
+};
 
 use rust_debug::utils::in_ranges;
 
@@ -16,7 +27,15 @@ use gimli::{read::EndianRcSlice, DebugFrame, Dwarf, Error, LittleEndian, Reader,
 
 use std::rc::Rc;
 
+use std::time::Duration;
 use std::path::PathBuf;
+use futures::{
+    executor::block_on,
+    FutureExt,
+    pin_mut,
+    select,
+    future::FusedFuture,
+};
 use structopt::StructOpt;
 
 use anyhow::{anyhow, Context, Result};
@@ -27,14 +46,14 @@ use chrono::Local;
 use env_logger::*;
 use log::{error, LevelFilter};
 use std::io::Write;
+use async_std::{io, task, io::ReadExt};
+
 
 #[derive(Debug)]
 enum Mode {
     Debug,
     DebugAdapter,
-}
-
-impl FromStr for Mode {
+} impl FromStr for Mode {
     type Err = &'static str;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -85,6 +104,12 @@ pub struct Opt {
 }
 
 fn main() -> Result<()> {
+    let future = async_main();
+    block_on(future)
+}
+
+
+async fn async_main() -> Result<()> {
     let opt = Opt::from_args();
 
     // Setup log
@@ -114,10 +139,84 @@ fn main() -> Result<()> {
         .init();
 
     match opt.mode {
-        Mode::Debug => cli::debug_mode(opt),
-        Mode::DebugAdapter => debug_adapter::start_tcp_server(opt.port),
+        Mode::Debug => cli_mode(opt).await,
+        Mode::DebugAdapter => server_mode(opt).await,
     }
 }
+
+
+/*
+ *  Run the debugger as a CLI application.
+ *
+ *  1. Create needed data structures, like one for debugging state.
+ *  2. Create the different tasks.
+ *      * CLI: Text input to Request.
+ *      * Poller Event: Timer that is used to tell the event loop to poll the state of the
+ *      debug target device.
+ *  3. Event loop: Handle the results from the tasks. 
+ */
+async fn cli_mode(opt: Opt) -> Result<()> {
+    // Setup needed variables
+    let stdin = io::stdin();
+    let mut stdout = io::stdout();
+    let commands = Commands::new();
+    let sleep_duration = 100;
+
+    let mut debug_handler = debugger::NewDebugHandler::new(opt, load_loader);
+
+    // Create the tasks
+    let cli_task = cli::handle_input(&stdin, &commands).fuse();
+    let heartbeat_task = task::sleep(Duration::from_millis(sleep_duration)).fuse();
+    pin_mut!(cli_task, heartbeat_task);
+
+    // Event loop
+    loop {
+        select! {
+            c = cli_task => {
+                match c? {
+                    DebugRequest::Help { description } => println!("{}", description),
+                    request => {
+                        // Execute request
+                        let response = debug_handler.handle_request(request)?;
+
+                        // Print response to user and exit if requested
+                        if cli::handle_response(&mut stdout, &response)? {
+                            break;
+                        }
+                    },
+                };
+
+                // Restart the task
+                if cli_task.is_terminated() {
+                    cli_task.set(cli::handle_input(&stdin, &commands).fuse())
+                }
+            },
+            () = heartbeat_task => { 
+                // Check if debug target state has changed
+                if let Ok(Some(event)) = debug_handler.poll_state() {
+                    cli::handle_event(&event);
+                }
+
+                // Restart the task
+                if heartbeat_task.is_terminated() {
+                    heartbeat_task.set(task::sleep(Duration::from_millis(sleep_duration)).fuse());
+                }
+            },
+        }
+    }
+
+    Ok(())
+}
+
+
+/*
+ * Run the debugger as a DAP TCP server application.
+ */
+async fn server_mode(opt: Opt) -> Result<()> {
+
+    Ok(())
+}
+
 
 fn attach_probe(chip: &str, probe_num: usize) -> Result<Session> {
     // Get a list of all available debug probes.
@@ -137,27 +236,37 @@ fn attach_probe(chip: &str, probe_num: usize) -> Result<Session> {
     Ok(session)
 }
 
-fn read_dwarf<'a>(
+
+
+fn load_loader(data: &[u8]) -> EndianRcSlice<LittleEndian> {
+   gimli::read::EndianRcSlice::new(
+       Rc::from(&*data),
+       gimli::LittleEndian,
+   )
+}
+
+
+
+fn read_dwarf<'a, R: Reader<Offset = usize>>(
     path: &Path,
+    load_loader: fn(data: &[u8]) -> R,
 ) -> Result<(
-    Dwarf<EndianRcSlice<LittleEndian>>,
-    DebugFrame<EndianRcSlice<LittleEndian>>,
+    Dwarf<R>,
+    DebugFrame<R>,
 )> {
     let file = fs::File::open(&path)?;
     let mmap = unsafe { memmap::Mmap::map(&file)? };
     let object = object::File::parse(&*mmap)?;
 
     // Load a section and return as `Cow<[u8]>`.
-    let loader = |id: gimli::SectionId| -> Result<EndianRcSlice<LittleEndian>, gimli::Error> {
+    let loader = |id: gimli::SectionId| -> Result<R, gimli::Error> {
         let data = object
             .section_by_name(id.name())
             .and_then(|section| section.uncompressed_data().ok())
             .unwrap_or_else(|| borrow::Cow::Borrowed(&[][..]));
 
-        Ok(gimli::read::EndianRcSlice::new(
-            Rc::from(&*data),
-            gimli::LittleEndian,
-        ))
+        
+        Ok(load_loader(&*data))
     };
 
     // Load a supplementary section. We don't have a supplementary object file,
