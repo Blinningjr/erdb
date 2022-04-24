@@ -1,4 +1,4 @@
-use super::{debug_request::DebugRequest, Command};
+use super::{debug_request::DebugRequest};
 
 use anyhow::{anyhow, Result};
 

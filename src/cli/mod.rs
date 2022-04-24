@@ -3,7 +3,7 @@ use async_std::io;
 use super::{
     commands::{
         commands::Commands, debug_event::DebugEvent, debug_request::DebugRequest,
-        debug_response::DebugResponse, Command,
+        debug_response::DebugResponse,
     },
 };
 use crate::debugger::StackFrame;
@@ -12,7 +12,6 @@ use anyhow::{anyhow, Result};
 use debugserver_types::Breakpoint;
 use log::error;
 use probe_rs::CoreStatus;
-
 
 
 pub async fn handle_input(stdin: &io::Stdin, cmd_parser: &Commands) -> Result<DebugRequest> {
@@ -32,6 +31,24 @@ pub async fn handle_input(stdin: &io::Stdin, cmd_parser: &Commands) -> Result<De
         return Ok(request);
     }
 }
+
+
+pub async fn simple_handle_input(stdin: &io::Stdin) -> Result<bool> {
+    loop {
+        // Read next line asynchronously
+        let mut line = String::new();
+        stdin.read_line(&mut line).await?;
+    
+        return Ok(match line.as_str() {
+            "q\n" => true,
+            "quit\n" => true,
+            "e\n" => true,
+            "exit\n" => true,
+            _ => false,
+        });
+    }
+}
+
 
 pub fn handle_response(stdout: &mut io::Stdout, response: &DebugResponse) -> Result<bool> {
         //println!("{:?}", response);

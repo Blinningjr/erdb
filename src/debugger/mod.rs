@@ -1,8 +1,8 @@
 pub mod config;
 
 use config::Config;
-use object::File;
-use std::path::Path;
+//use object::File;
+//use std::path::Path;
 
 use rust_debug::call_stack::{CallFrame, MemoryAccess};
 use rust_debug::evaluate::evaluate::{get_udata, EvaluatorValue};
@@ -23,7 +23,7 @@ use super::Opt;
 use super::{attach_probe, read_dwarf};
 use anyhow::{anyhow, Context, Result};
 use capstone::arch::BuildsCapstone;
-use crossbeam_channel::{Receiver, Sender, TryRecvError};
+//use crossbeam_channel::{Receiver, Sender, TryRecvError};
 use debugserver_types::{Breakpoint, SourceBreakpoint};
 use log::{error, info, warn};
 use probe_rs::flashing::{download_file, Format};
