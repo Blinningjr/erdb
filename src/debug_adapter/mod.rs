@@ -19,17 +19,15 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::{from_slice, from_value, json, to_vec};
 
 use gimli::Reader;
-use crate::debugger::NewDebugHandler;
 
-use crate::commands::debug_event::DebugEvent;
-//use super::{
-//    commands::{
-//        debug_event::DebugEvent, debug_request::DebugRequest, debug_response::DebugResponse,
-//        Command,
-//    },
-//    debugger::DebugHandler,
-//};
-//
+use super::{
+    commands::{
+        debug_event::DebugEvent, debug_request::DebugRequest, debug_response::DebugResponse,
+        Command,
+    },
+    debugger::NewDebugHandler,
+};
+
 use probe_rs::HaltReason;
 
 pub struct DebugAdapter<W: Write + Unpin> {
@@ -68,26 +66,26 @@ impl<W: Write + Unpin> DebugAdapter<W> {
         let result = match request.command.as_ref() {
             "initialize" => self.handle_init_dap_request(&request).await,
             "launch" => self.handle_launch_dap_request(&request).await,
-//            "attach" => self.handle_attach_dap_request(&request),
-//            "setBreakpoints" => self.handle_set_breakpoints_dap_request(&request),
-//            "threads" => self.handle_threads_dap_request(&request),
-//            //          //  "setDataBreakpoints"        => Ok(()), // TODO
-//            //          //  "setExceptionBreakpoints"   => Ok(()), // TODO
-//            "configurationDone" => self.handle_configuration_done_dap_request(&request),
-//            "pause" => self.handle_pause_dap_request(&request),
-//            "stackTrace" => self.handle_stack_trace_dap_request(&request),
-//            "disconnect" => self.handle_disconnect_dap_request(&request),
-//            "continue" => self.handle_continue_dap_request(&request),
-//            "scopes" => self.handle_scopes_dap_request(&request),
-//            "source" => {
-//                error!("Unimpleemted");
-//                Ok(false) // NOTE: Return Error maybe
-//            }
-//            "variables" => self.handle_variables_dap_request(&request),
-//            "next" => self.handle_next_dap_request(&request),
-//            "stepIn" => self.handle_next_dap_request(&request), // TODO
-//            "stepOut" => self.handle_next_dap_request(&request), // TODO
-//            "evaluate" => self.handle_evaluate_dap_request(&request),
+            "attach" => self.handle_attach_dap_request(debug_handler, &request).await,
+            "setBreakpoints" => self.handle_set_breakpoints_dap_request(debug_handler, &request).await,
+            "threads" => self.handle_threads_dap_request(&request).await,
+            //  "setDataBreakpoints"        => Ok(()), // TODO
+            //  "setExceptionBreakpoints"   => Ok(()), // TODO
+            "configurationDone" => self.handle_configuration_done_dap_request(&request).await,
+            "pause" => self.handle_pause_dap_request(debug_handler, &request).await,
+            "stackTrace" => self.handle_stack_trace_dap_request(debug_handler, &request).await,
+            "disconnect" => self.handle_disconnect_dap_request(debug_handler, &request).await,
+            "continue" => self.handle_continue_dap_request(debug_handler, &request).await,
+            "scopes" => self.handle_scopes_dap_request(debug_handler, &request).await,
+            "source" => {
+                error!("Unimpleemted");
+                Ok(false) // NOTE: Return Error maybe
+            }
+            "variables" => self.handle_variables_dap_request(debug_handler, &request).await,
+            "next" => self.handle_next_dap_request(debug_handler, &request).await,
+            "stepIn" => self.handle_next_dap_request(debug_handler, &request).await, // TODO
+            "stepOut" => self.handle_next_dap_request(debug_handler, &request).await, // TODO
+            "evaluate" => self.handle_evaluate_dap_request(debug_handler, &request).await,
             _ => {
                 error!("command: {}", request.command);
                 Err(anyhow!("Unimpleemted command: {}", request.command))
@@ -198,470 +196,429 @@ impl<W: Write + Unpin> DebugAdapter<W> {
         error!("Unimplemented");
         Ok(false) // NOTE: return error maybe
     }
-}
 
-//    fn handle_attach_dap_request(&mut self, request: &Request) -> Result<bool> {
-//        let args: AttachRequestArguments = get_arguments(&request)?;
-//        debug!("attach args: {:#?}", args);
-//        info!("program: {:?}", args.program);
-//
-//        // Set binary path
-//        let path = PathBuf::from(args.program);
-//        self.sender.send(DebugRequest::SetBinary { path: path })?;
-//
-//        // Get DebugResponse
-//        let _ack = self.retrieve_response()?;
-//
-//        // Set chip
-//        self.sender.send(DebugRequest::SetChip {
-//            chip: args.chip.clone(),
-//        })?;
-//
-//        // Get DebugResponse
-//        let _ack = self.retrieve_response()?;
-//
-//        match args.cwd {
-//            Some(cwd) => {
-//                // Set cwd
-//                self.sender.send(DebugRequest::SetCWD { cwd: cwd })?;
-//
-//                // Get DebugResponse
-//                let _ack = self.retrieve_response()?;
-//            }
-//            None => (),
-//        };
-//
-//        // Flash and attach or just attach to the core
-//        match args.flash {
-//            Some(true) => {
-//                // Flash to chip
-//                self.sender.send(DebugRequest::Flash {
-//                    reset_and_halt: match args.halt_after_reset {
-//                        Some(val) => val,
-//                        None => false,
-//                    },
-//                })?;
-//
-//                // Get Flash DebugResponse
-//                let _ack = self.retrieve_response()?;
-//            }
-//            _ => {
-//                // Attach to chip
-//                self.sender.send(DebugRequest::Attach {
-//                    reset: match args.reset {
-//                        Some(val) => val,
-//                        None => false,
-//                    },
-//                    reset_and_halt: match args.halt_after_reset {
-//                        Some(val) => val,
-//                        None => false,
-//                    },
-//                })?;
-//
-//                // Get Attach DebugResponse
-//                let _ack = self.retrieve_response()?;
-//            }
-//        };
-//
-//        let response = Response {
-//            body: None,
-//            command: request.command.clone(),
-//            message: None,
-//            request_seq: request.seq,
-//            seq: request.seq,
-//            success: true,
-//            type_: "response".to_string(),
-//        };
-//
-//        self.seq = send_data(&mut self.writer, &to_vec(&response)?, self.seq)?;
-//
-//        Ok(false)
-//    }
-//
-//    fn handle_configuration_done_dap_request(&mut self, request: &Request) -> Result<bool> {
-//        let response = Response {
-//            body: None,
-//            command: request.command.clone(),
-//            message: None,
-//            request_seq: request.seq,
-//            seq: self.seq,
-//            success: true,
-//            type_: "response".to_string(),
-//        };
-//
-//        self.seq = send_data(&mut self.writer, &to_vec(&response)?, self.seq)?;
-//
-//        Ok(false)
-//    }
-//
-//    fn handle_threads_dap_request(&mut self, request: &Request) -> Result<bool> {
-//        let body = ThreadsResponseBody {
-//            threads: vec![Thread {
-//                id: 0,
-//                name: "Main Thread".to_string(),
-//            }],
-//        };
-//
-//        let response = Response {
-//            body: Some(json!(body)),
-//            command: request.command.clone(),
-//            message: None,
-//            request_seq: request.seq,
-//            seq: self.seq,
-//            success: true,
-//            type_: "response".to_string(),
-//        };
-//
-//        self.seq = send_data(&mut self.writer, &to_vec(&response)?, self.seq)?;
-//
-//        Ok(false)
-//    }
-//
-//    fn handle_pause_dap_request(&mut self, request: &Request) -> Result<bool> {
-//        // Send halt DebugRequest
-//        self.sender.send(DebugRequest::Halt)?;
-//
-//        // Get halt DebugResponse
-//        let _ack = self.retrieve_response()?;
-//
-//        let response = Response {
-//            body: None,
-//            command: request.command.clone(),
-//            message: None,
-//            request_seq: request.seq,
-//            seq: self.seq,
-//            success: true,
-//            type_: "response".to_string(),
-//        };
-//        self.seq = send_data(&mut self.writer, &to_vec(&response)?, self.seq)?;
-//
-//        Ok(false)
-//    }
-//
-//    fn handle_stack_trace_dap_request(&mut self, request: &Request) -> Result<bool> {
-//        let args: debugserver_types::StackTraceArguments = get_arguments(&request)?;
-//        debug!("args: {:?}", args);
-//
-//        // Get DAP stack frames
-//        self.sender.send(DebugRequest::DAPStackFrames)?;
-//
-//        // Get stack trace DebugResponse
-//        let ack = self.retrieve_response()?;
-//        let stack_frames = match ack {
-//            DebugResponse::DAPStackFrames { stack_frames } => stack_frames,
-//            _ => {
-//                error!("Unreachable");
-//                return Err(anyhow!("Unreachable"));
-//            }
-//        };
-//
-//        let total_frames = stack_frames.len() as i64;
-//        let body = StackTraceResponseBody {
-//            stack_frames: stack_frames,
-//            total_frames: Some(total_frames),
-//        };
-//
-//        let response = Response {
-//            body: Some(json!(body)),
-//            command: request.command.clone(),
-//            message: None,
-//            request_seq: request.seq,
-//            seq: self.seq,
-//            success: true,
-//            type_: "response".to_string(),
-//        };
-//
-//        self.seq = send_data(&mut self.writer, &to_vec(&response)?, self.seq)?;
-//
-//        Ok(false)
-//    }
-//
-//    fn handle_scopes_dap_request(&mut self, request: &Request) -> Result<bool> {
-//        let args: debugserver_types::ScopesArguments = get_arguments(&request)?;
-//        debug!("args: {:?}", args);
-//
-//        // Get stack trace
-//        self.sender.send(DebugRequest::DAPScopes {
-//            frame_id: args.frame_id,
-//        })?;
-//
-//        // Get stack trace DebugResponse
-//        let ack = self.retrieve_response()?;
-//        let scopes = match ack {
-//            DebugResponse::DAPScopes { scopes } => scopes,
-//            _ => {
-//                error!("Unreachable");
-//                vec![]
-//            }
-//        };
-//
-//        let body = debugserver_types::ScopesResponseBody { scopes: scopes };
-//
-//        let response = Response {
-//            body: Some(json!(body)),
-//            command: request.command.clone(),
-//            message: None,
-//            request_seq: request.seq,
-//            seq: self.seq,
-//            success: true,
-//            type_: "response".to_string(),
-//        };
-//
-//        self.seq = send_data(&mut self.writer, &to_vec(&response)?, self.seq)?;
-//
-//        Ok(false)
-//    }
-//
-//    fn handle_variables_dap_request(&mut self, request: &Request) -> Result<bool> {
-//        let args: debugserver_types::VariablesArguments = get_arguments(&request)?;
-//        debug!("args: {:?}", args);
-//
-//        // Get stack trace
-//        self.sender.send(DebugRequest::DAPVariables {
-//            id: args.variables_reference,
-//        })?;
-//
-//        // Get stack trace DebugResponse
-//        let ack = self.retrieve_response()?;
-//        let vars = match ack {
-//            DebugResponse::DAPVariables { variables } => variables,
-//            _ => {
-//                error!("Unreachable");
-//                return Err(anyhow!("Unreachable"));
-//            }
-//        };
-//
-//        // Parse variables
-//        let mut variables = vec![];
-//
-//        for var in &vars {
-//            let (indexed_variables, named_variables) = var.get_num_diff_children();
-//            variables.push(debugserver_types::Variable {
-//                evaluate_name: None, //Option<String>,
-//                indexed_variables: Some(indexed_variables),
-//                name: match &var.name {
-//                    Some(name) => name.clone(),
-//                    None => "<unknown>".to_string(),
-//                },
-//                named_variables: Some(named_variables),
-//                presentation_hint: None,
-//                type_: Some(var.type_.clone()),
-//                value: var.value_to_string(),
-//                variables_reference: var.id, // i64,
-//            });
-//        }
-//
-//        let body = debugserver_types::VariablesResponseBody {
-//            variables: variables,
-//        };
-//
-//        let response = Response {
-//            body: Some(json!(body)),
-//            command: request.command.clone(),
-//            message: None,
-//            request_seq: request.seq,
-//            seq: self.seq,
-//            success: true,
-//            type_: "response".to_string(),
-//        };
-//
-//        self.seq = send_data(&mut self.writer, &to_vec(&response)?, self.seq)?;
-//
-//        Ok(false)
-//    }
-//
-//    fn handle_continue_dap_request(&mut self, request: &Request) -> Result<bool> {
-//        // Send continue DebugRequest
-//        self.sender.send(DebugRequest::Continue)?;
-//
-//        // Get Continue DebugResponse
-//        let _ack = self.retrieve_response()?;
-//
-//        let body = ContinueResponseBody {
-//            all_threads_continued: Some(true),
-//        };
-//
-//        let response = Response {
-//            body: Some(json!(body)),
-//            command: request.command.clone(),
-//            message: None,
-//            request_seq: request.seq,
-//            seq: self.seq,
-//            success: true,
-//            type_: "response".to_string(),
-//        };
-//
-//        self.seq = send_data(&mut self.writer, &to_vec(&response)?, self.seq)?;
-//
-//        Ok(false)
-//    }
-//
-//    fn handle_disconnect_dap_request(&mut self, request: &Request) -> Result<bool> {
-//        let args: DisconnectArguments = get_arguments(&request)?;
-//        debug!("args: {:?}", args);
-//        // TODO: Stop the debuggee, if conditions are meet
-//
-//        // Send Exit DebugRequest
-//        self.sender.send(DebugRequest::Exit)?;
-//
-//        // Get Exit DebugResponse
-//        let _ack = self.retrieve_response()?;
-//
-//        let response = Response {
-//            body: None,
-//            command: request.command.clone(),
-//            message: None,
-//            request_seq: request.seq,
-//            seq: self.seq,
-//            success: true,
-//            type_: "response".to_string(),
-//        };
-//
-//        self.seq = send_data(&mut self.writer, &to_vec(&response)?, self.seq)?;
-//
-//        Ok(true)
-//    }
-//
-//    fn handle_next_dap_request(&mut self, request: &Request) -> Result<bool> {
-//        // Send Step DebugRequest
-//        self.sender.send(DebugRequest::Step)?;
-//
-//        // Get Step DebugResponse
-//        let _ack = self.retrieve_response()?;
-//
-//        let response = Response {
-//            body: None,
-//            command: request.command.clone(),
-//            message: None,
-//            request_seq: request.seq,
-//            seq: self.seq,
-//            success: true,
-//            type_: "response".to_string(),
-//        };
-//
-//        self.seq = send_data(&mut self.writer, &to_vec(&response)?, self.seq)?;
-//
-//        Ok(false)
-//    }
-//
-//    fn handle_evaluate_dap_request(&mut self, request: &Request) -> Result<bool> {
-//        let body = EvaluateResponseBody {
-//            result: "This feature is not yet implemented".to_owned(),
-//            variables_reference: 0.0,
-//            type_: None,
-//            indexed_variables: None,
-//            named_variables: None,
-//            presentation_hint: None,
-//        };
-//
-//        let response = Response {
-//            body: Some(json!(body)),
-//            command: request.command.clone(),
-//            message: None,
-//            request_seq: request.seq,
-//            seq: self.seq,
-//            success: true,
-//            type_: "response".to_string(),
-//        };
-//
-//        self.seq = send_data(&mut self.writer, &to_vec(&response)?, self.seq)?;
-//
-//        Ok(false)
-//    }
-//
-//    fn handle_set_breakpoints_dap_request(&mut self, request: &Request) -> Result<bool> {
-//        let args: SetBreakpointsArguments = get_arguments(request)?;
-//        debug!("args: {:#?}", args);
-//
-//        let source_breakpoints = match args.breakpoints {
-//            Some(bkpts) => bkpts,
-//            None => vec![],
-//        };
-//
-//        let breakpoints: Vec<Breakpoint> = match args.source.path.clone() {
-//            Some(path) => {
-//                // Send SetBreakpoints DebugRequest
-//                self.sender.send(DebugRequest::SetBreakpoints {
-//                    source_file: path,
-//                    source_breakpoints: source_breakpoints,
-//                    source: Some(args.source.clone()),
-//                })?;
-//
-//                // Get SetBreakpoints DebugResponse
-//                let ack = self.retrieve_response()?;
-//                let breakpoints = match ack {
-//                    DebugResponse::SetBreakpoints { breakpoints } => breakpoints,
-//                    _ => {
-//                        error!("Unreachable: {:#?}", ack);
-//                        vec![]
-//                    }
-//                };
-//                breakpoints
-//            }
-//            None => vec![],
-//        };
-//
-//        let body = SetBreakpointsResponseBody {
-//            breakpoints: breakpoints,
-//        };
-//
-//        let response = Response {
-//            body: Some(json!(body)),
-//            command: request.command.clone(),
-//            message: None,
-//            request_seq: request.seq,
-//            seq: self.seq,
-//            success: true,
-//            type_: "response".to_string(),
-//        };
-//
-//        self.seq = send_data(&mut self.writer, &to_vec(&response)?, self.seq)?;
-//
-//        Ok(false)
-//    }
-//
-//    fn retrieve_response(&mut self) -> Result<DebugResponse> {
-//        // Get DebugResponse
-//        loop {
-//            let command = self.receiver.recv()?;
-//            match command {
-//                Command::Response(response) => {
-//                    if let DebugResponse::Error { message } = response {
-//                        return Err(anyhow!("{}", message));
-//                    }
-//                    return Ok(response);
-//                }
-//                Command::Event(event) => self.handle_event_command(event)?,
-//                _ => {
-//                    error!("Unreachable");
-//                    return Err(anyhow!("Unreachable"));
-//                }
-//            };
-//        }
-//    }
-//}
-//
-fn verify_init_msg(message: DebugAdapterMessage) -> Result<Request> {
-    match message {
-        DebugAdapterMessage::Request(req) => {
-            if req.command != "initialize" {
-                return Err(anyhow!(
-                    "Error: Expected command initialize got {}",
-                    req.command
-                ));
+
+    async fn handle_attach_dap_request<R: Reader<Offset = usize>>(&mut self,
+                                       debug_handler: &mut NewDebugHandler<R>,
+                                       request: &Request
+                                       ) -> Result<bool> {
+        let args: AttachRequestArguments = get_arguments(&request)?;
+        debug!("attach args: {:#?}", args);
+        info!("program: {:?}", args.program);
+
+        // Set binary path
+        let path = PathBuf::from(args.program);
+        let _sb_ack = debug_handler.handle_request(DebugRequest::SetBinary { path: path })?;
+
+        // Set chip
+        let _sc_ack = debug_handler.handle_request(DebugRequest::SetChip {
+            chip: args.chip.clone(),
+        })?;
+
+        match args.cwd {
+            Some(cwd) => {
+                // Set Current Working Directory (CWD)
+                let _cwd_ack = debug_handler.handle_request(DebugRequest::SetCWD {cwd})?;
             }
+            None => (),
+        };
 
-            let arguments: InitializeRequestArguments = get_arguments(&req)?;
-            debug!(
-                "Initialization request from client '{}'",
-                arguments.client_name.unwrap_or("<unknown>".to_owned())
-            );
-            Ok(req)
+        // Flash and attach or just attach to the core
+        match args.flash {
+            Some(true) => {
+                // Flash binary to chip
+                let _flash_ack = debug_handler.handle_request(DebugRequest::Flash {
+                    reset_and_halt: match args.halt_after_reset {
+                        Some(val) => val,
+                        None => false,
+                    },
+                })?;
+            }
+            _ => {
+                // Attach to chip
+                let _attach_ack = debug_handler.handle_request(DebugRequest::Attach {
+                    reset: match args.reset {
+                        Some(val) => val,
+                        None => false,
+                    },
+                    reset_and_halt: match args.halt_after_reset {
+                        Some(val) => val,
+                        None => false,
+                    },
+                })?;
+            }
+        };
+
+        let response = Response {
+            body: None,
+            command: request.command.clone(),
+            message: None,
+            request_seq: request.seq,
+            seq: request.seq,
+            success: true,
+            type_: "response".to_string(),
+        };
+
+        self.seq = send_data(&mut self.writer, &to_vec(&response)?, self.seq).await?;
+
+        Ok(false)
+    }
+
+    async fn handle_configuration_done_dap_request(&mut self, request: &Request) -> Result<bool> {
+        let response = Response {
+            body: None,
+            command: request.command.clone(),
+            message: None,
+            request_seq: request.seq,
+            seq: self.seq,
+            success: true,
+            type_: "response".to_string(),
+        };
+
+        self.seq = send_data(&mut self.writer, &to_vec(&response)?, self.seq).await?;
+
+        Ok(false)
+    }
+
+    async fn handle_threads_dap_request(&mut self, request: &Request) -> Result<bool> {
+        let body = ThreadsResponseBody {
+            threads: vec![Thread {
+                id: 0,
+                name: "Main Thread".to_string(),
+            }],
+        };
+
+        let response = Response {
+            body: Some(json!(body)),
+            command: request.command.clone(),
+            message: None,
+            request_seq: request.seq,
+            seq: self.seq,
+            success: true,
+            type_: "response".to_string(),
+        };
+
+        self.seq = send_data(&mut self.writer, &to_vec(&response)?, self.seq).await?;
+
+        Ok(false)
+    }
+
+    async fn handle_pause_dap_request<R: Reader<Offset = usize>>(&mut self,
+                                      debug_handler: &mut NewDebugHandler<R>,
+                                      request: &Request
+                                      ) -> Result<bool> {
+        // Send halt DebugRequest
+        let _ack = debug_handler.handle_request(DebugRequest::Halt)?;
+
+        let response = Response {
+            body: None,
+            command: request.command.clone(),
+            message: None,
+            request_seq: request.seq,
+            seq: self.seq,
+            success: true,
+            type_: "response".to_string(),
+        };
+        self.seq = send_data(&mut self.writer, &to_vec(&response)?, self.seq).await?;
+
+        Ok(false)
+    }
+
+    async fn handle_stack_trace_dap_request<R: Reader<Offset = usize>>(&mut self,
+                                            debug_handler: &mut NewDebugHandler<R>,
+                                            request: &Request
+                                            ) -> Result<bool> {
+        let args: debugserver_types::StackTraceArguments = get_arguments(&request)?;
+        debug!("args: {:?}", args);
+
+        // Get DAP stack frames
+        let ack = debug_handler.handle_request(DebugRequest::DAPStackFrames)?;
+
+        // Get stack frames from response
+        let stack_frames = match ack {
+            DebugResponse::DAPStackFrames { stack_frames } => stack_frames,
+            _ => {
+                error!("Unreachable");
+                return Err(anyhow!("Unreachable"));
+            }
+        };
+
+        let total_frames = stack_frames.len() as i64;
+        let body = StackTraceResponseBody {
+            stack_frames,
+            total_frames: Some(total_frames),
+        };
+
+        let response = Response {
+            body: Some(json!(body)),
+            command: request.command.clone(),
+            message: None,
+            request_seq: request.seq,
+            seq: self.seq,
+            success: true,
+            type_: "response".to_string(),
+        };
+
+        self.seq = send_data(&mut self.writer, &to_vec(&response)?, self.seq).await?;
+
+        Ok(false)
+    }
+
+    async fn handle_scopes_dap_request<R: Reader<Offset = usize>>(&mut self,
+                                                                  debug_handler: &mut NewDebugHandler<R>,
+                                                                  request: &Request
+                                                                  ) -> Result<bool> {
+        let args: debugserver_types::ScopesArguments = get_arguments(&request)?;
+        debug!("args: {:?}", args);
+
+        // Get stack trace
+        let ack = debug_handler.handle_request(DebugRequest::DAPScopes {
+            frame_id: args.frame_id,
+        })?;
+
+        // Get scopes from response.
+        let scopes = match ack {
+            DebugResponse::DAPScopes { scopes } => scopes,
+            _ => {
+                error!("Unreachable");
+                vec![]
+            }
+        };
+
+        let body = debugserver_types::ScopesResponseBody { scopes };
+
+        let response = Response {
+            body: Some(json!(body)),
+            command: request.command.clone(),
+            message: None,
+            request_seq: request.seq,
+            seq: self.seq,
+            success: true,
+            type_: "response".to_string(),
+        };
+
+        self.seq = send_data(&mut self.writer, &to_vec(&response)?, self.seq).await?;
+
+        Ok(false)
+    }
+
+    async fn handle_variables_dap_request<R: Reader<Offset = usize>>(&mut self,
+                                                                     debug_handler: &mut NewDebugHandler<R>,
+                                                                     request: &Request
+                                                                     ) -> Result<bool> {
+        let args: debugserver_types::VariablesArguments = get_arguments(&request)?;
+        debug!("args: {:?}", args);
+
+        // Get stack trace
+        let ack = debug_handler.handle_request(DebugRequest::DAPVariables {
+            id: args.variables_reference,
+        })?;
+
+        // Get variables from debugger response
+        let vars = match ack {
+            DebugResponse::DAPVariables { variables } => variables,
+            _ => {
+                error!("Unreachable");
+                return Err(anyhow!("Unreachable"));
+            }
+        };
+
+        // Parse variables
+        let mut variables = vec![];
+
+        for var in &vars {
+            let (indexed_variables, named_variables) = var.get_num_diff_children();
+            variables.push(debugserver_types::Variable {
+                evaluate_name: None, //Option<String>,
+                indexed_variables: Some(indexed_variables),
+                name: match &var.name {
+                    Some(name) => name.clone(),
+                    None => "<unknown>".to_string(),
+                },
+                named_variables: Some(named_variables),
+                presentation_hint: None,
+                type_: Some(var.type_.clone()),
+                value: var.value_to_string(),
+                variables_reference: var.id, // i64,
+            });
         }
 
-        _ => Err(anyhow!("Error: initial message should be of type request")),
+        let body = debugserver_types::VariablesResponseBody {
+            variables,
+        };
+
+        let response = Response {
+            body: Some(json!(body)),
+            command: request.command.clone(),
+            message: None,
+            request_seq: request.seq,
+            seq: self.seq,
+            success: true,
+            type_: "response".to_string(),
+        };
+
+        self.seq = send_data(&mut self.writer, &to_vec(&response)?, self.seq).await?;
+
+        Ok(false)
+    }
+
+    async fn handle_continue_dap_request<R: Reader<Offset = usize>>(&mut self,
+                                         debug_handler: &mut NewDebugHandler<R>,
+                                         request: &Request
+                                         ) -> Result<bool> {
+        // Send continue DebugRequest
+        let _ack = debug_handler.handle_request(DebugRequest::Continue)?;
+
+        let body = ContinueResponseBody {
+            all_threads_continued: Some(true),
+        };
+
+        let response = Response {
+            body: Some(json!(body)),
+            command: request.command.clone(),
+            message: None,
+            request_seq: request.seq,
+            seq: self.seq,
+            success: true,
+            type_: "response".to_string(),
+        };
+
+        self.seq = send_data(&mut self.writer, &to_vec(&response)?, self.seq).await?;
+
+        Ok(false)
+    }
+
+    async fn handle_disconnect_dap_request<R: Reader<Offset = usize>>(&mut self,
+                                           debug_handler: &mut NewDebugHandler<R>,
+                                           request: &Request
+                                           ) -> Result<bool> {
+        let args: DisconnectArguments = get_arguments(&request)?;
+        debug!("args: {:?}", args);
+        // TODO: Stop the debuggee, if conditions are meet
+
+        // Send Exit DebugRequest
+        let _ack = debug_handler.handle_request(DebugRequest::Exit)?;
+
+        let response = Response {
+            body: None,
+            command: request.command.clone(),
+            message: None,
+            request_seq: request.seq,
+            seq: self.seq,
+            success: true,
+            type_: "response".to_string(),
+        };
+
+        self.seq = send_data(&mut self.writer, &to_vec(&response)?, self.seq).await?;
+
+        Ok(true)
+    }
+
+    async fn handle_next_dap_request<R: Reader<Offset = usize>>(&mut self,
+                                                                debug_handler: &mut NewDebugHandler<R>,
+                                                                request: &Request,
+                                                                ) -> Result<bool> {
+        // Send Step DebugRequest
+        let _ack = debug_handler.handle_request(DebugRequest::Step)?;
+
+        // Send response
+        let response = Response {
+            body: None,
+            command: request.command.clone(),
+            message: None,
+            request_seq: request.seq,
+            seq: self.seq,
+            success: true,
+            type_: "response".to_string(),
+        };
+        self.seq = send_data(&mut self.writer, &to_vec(&response)?, self.seq).await?;
+
+        Ok(false)
+    }
+
+    async fn handle_evaluate_dap_request<R: Reader<Offset = usize>>(&mut self,
+                                                                    _debug_handler: &mut NewDebugHandler<R>,
+                                                                    request: &Request
+                                                                    ) -> Result<bool> {
+        // TODO: Implement this feature
+        let body = EvaluateResponseBody {
+            result: "This feature is not yet implemented".to_owned(),
+            variables_reference: 0.0,
+            type_: None,
+            indexed_variables: None,
+            named_variables: None,
+            presentation_hint: None,
+        };
+
+        let response = Response {
+            body: Some(json!(body)),
+            command: request.command.clone(),
+            message: None,
+            request_seq: request.seq,
+            seq: self.seq,
+            success: true,
+            type_: "response".to_string(),
+        };
+
+        self.seq = send_data(&mut self.writer, &to_vec(&response)?, self.seq).await?;
+
+        Ok(false)
+    }
+
+    async fn handle_set_breakpoints_dap_request<R: Reader<Offset = usize>>(&mut self,
+                                                debug_handler: &mut NewDebugHandler<R>,
+                                                request: &Request
+                                                ) -> Result<bool> {
+        let args: SetBreakpointsArguments = get_arguments(request)?;
+        debug!("args: {:#?}", args);
+
+        let source_breakpoints = match args.breakpoints {
+            Some(bkpts) => bkpts,
+            None => vec![],
+        };
+
+        let breakpoints: Vec<Breakpoint> = match args.source.path.clone() {
+            Some(path) => {
+                // Send SetBreakpoints DebugRequest
+                let ack = debug_handler.handle_request(DebugRequest::SetBreakpoints {
+                    source_file: path,
+                    source_breakpoints,
+                    source: Some(args.source.clone()),
+                })?;
+
+                // Handle response
+                let breakpoints = match ack {
+                    DebugResponse::SetBreakpoints { breakpoints } => breakpoints,
+                    _ => {
+                        error!("Unreachable: {:#?}", ack);
+                        vec![]
+                    }
+                };
+                breakpoints
+            }
+            None => vec![],
+        };
+
+        let body = SetBreakpointsResponseBody {
+            breakpoints,
+        };
+
+        let response = Response {
+            body: Some(json!(body)),
+            command: request.command.clone(),
+            message: None,
+            request_seq: request.seq,
+            seq: self.seq,
+            success: true,
+            type_: "response".to_string(),
+        };
+
+        self.seq = send_data(&mut self.writer, &to_vec(&response)?, self.seq).await?;
+
+        Ok(false)
     }
 }
+
 
 pub async fn read_dap_msg<R: Read + Unpin>(mut reader: BufReader<R>) -> Result<DebugAdapterMessage, anyhow::Error> {
     let mut header = String::new();
