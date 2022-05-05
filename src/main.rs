@@ -229,8 +229,6 @@ async fn cli_mode(opt: Opt) -> Result<()> {
 async fn server_mode(opt: Opt) -> Result<()> {
     // Setup needed variables
     let stdin = io::stdin();
-//    let mut stdout = io::stdout();
-    let sleep_duration = 100;
 
     // Setup TCP server
     let addr = SocketAddr::from(([127, 0, 0, 1], opt.port.clone()));

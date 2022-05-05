@@ -1,8 +1,6 @@
 pub mod config;
 
 use config::Config;
-//use object::File;
-//use std::path::Path;
 
 use rust_debug::call_stack::{CallFrame, MemoryAccess};
 use rust_debug::evaluate::evaluate::{get_udata, EvaluatorValue};
@@ -23,7 +21,6 @@ use super::Opt;
 use super::{attach_probe, read_dwarf};
 use anyhow::{anyhow, Context, Result};
 use capstone::arch::BuildsCapstone;
-//use crossbeam_channel::{Receiver, Sender, TryRecvError};
 use debugserver_types::{Breakpoint, SourceBreakpoint};
 use log::{error, info, warn};
 use probe_rs::flashing::{download_file, Format};
@@ -31,7 +28,7 @@ use probe_rs::{CoreStatus, MemoryInterface};
 use regex::Regex;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 
 
@@ -127,7 +124,6 @@ pub struct DebugSession<R: Reader<Offset = usize>> {
     breakpoints: HashMap<u32, Breakpoint>,
     file_path: PathBuf,
     cwd: String,
-    check_time: Instant,
     running: bool,
     registers: Registers,
     stack_trace: Option<Vec<StackFrame>>,
@@ -178,7 +174,6 @@ impl<R: Reader<Offset = usize>> DebugSession<R> {
             breakpoints: HashMap::new(),
             file_path,
             cwd,
-            check_time: Instant::now(),
             running: true,
             registers,
             stack_trace: None,

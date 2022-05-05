@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 
-use async_std::net::{SocketAddr, TcpListener};
-use async_std::io::{BufRead, BufReader, ReadExt, Read, Write, WriteExt};
+use async_std::io::{BufReader, ReadExt, Read, Write, WriteExt};
 use async_std::prelude::*;
 
 use anyhow::{anyhow, Result};
@@ -10,7 +9,7 @@ use log::{debug, error, info, trace, warn};
 
 use debugserver_types::{
     Breakpoint, Capabilities, ContinueResponseBody, DisconnectArguments, EvaluateResponseBody,
-    Event, InitializeRequestArguments, InitializedEvent, ProtocolMessage, Request, Response,
+    Event, InitializedEvent, ProtocolMessage, Request, Response,
     SetBreakpointsArguments, SetBreakpointsResponseBody, StackTraceResponseBody, Thread,
     ThreadsResponseBody,
 };
@@ -23,7 +22,6 @@ use gimli::Reader;
 use super::{
     commands::{
         debug_event::DebugEvent, debug_request::DebugRequest, debug_response::DebugResponse,
-        Command,
     },
     debugger::NewDebugHandler,
 };
@@ -723,12 +721,12 @@ struct AttachRequestArguments {
 }
 
 
-#[derive(Deserialize, Debug, Default)]
-struct LaunchRequestArguments {
-    program: String,
-    chip: String,
-    cwd: Option<String>,
-    reset: Option<bool>,
-    no_debug: Option<bool>,
-    halt_after_reset: Option<bool>,
-}
+//#[derive(Deserialize, Debug, Default)]
+//struct LaunchRequestArguments {
+//    program: String,
+//    chip: String,
+//    cwd: Option<String>,
+//    reset: Option<bool>,
+//    no_debug: Option<bool>,
+//    halt_after_reset: Option<bool>,
+//}
