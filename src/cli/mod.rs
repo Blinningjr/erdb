@@ -205,8 +205,13 @@ fn print_stack_frame(stack_frame: &StackFrame) {
         }
     );
 
+    println!("\tVariables:");
     for var in &stack_frame.variables {
-        println!("\t{}", var.value_to_string());
+        let name = match var.name.clone() {
+            Some(n) => n,
+            None => "< unknown >".to_owned(),
+        };
+        println!("\t\t{} = {}", name, var.value_to_string());
     }
     println!("");
 }
@@ -220,7 +225,11 @@ fn handle_set_chip_response() {
 }
 
 fn handle_variable_response(variable: Variable) {
-    println!("\t{}", variable.value_to_string());
+    let name = match variable.name.clone() {
+        Some(n) => n,
+        None => "< unknown >".to_owned(),
+    };
+    println!("\t{} = {}", name, variable.value_to_string());
     match &variable.source {
         Some(source) => {
             match source.line {
@@ -253,6 +262,7 @@ fn handle_variables_response(variables: Vec<Variable>) {
     println!("Local variables:");
     for var in variables {
         handle_variable_response(var);
+        println!("");
     }
 }
 
