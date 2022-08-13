@@ -44,7 +44,7 @@ pub async fn simple_handle_input(stdin: &io::Stdin) -> Result<bool> {
     }
 }
 
-pub fn handle_response(stdout: &mut io::Stdout, response: &DebugResponse) -> Result<bool> {
+pub fn handle_response(_stdout: &mut io::Stdout, response: &DebugResponse) -> Result<bool> {
     //println!("{:?}", response);
     match response.to_owned() {
         DebugResponse::Exit => return Ok(true),

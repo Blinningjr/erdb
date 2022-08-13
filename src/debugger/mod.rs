@@ -1317,7 +1317,7 @@ impl Variable {
                 self.type_ = format!("{}::{}", self.type_, structure_type_value.name.clone());
 
                 let name = structure_type_value.name.clone();
-                if (name.contains("str") || name.contains("String")) {
+                if name.contains("str") || name.contains("String") {
                     // TODO: Redesign how string are evaluated
 
                     let mut num_bytes = 0;
