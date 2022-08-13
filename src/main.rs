@@ -6,21 +6,18 @@ mod debugger;
 //use object::File;
 //use gimli::EndianReader;
 
-
 use commands::{
-    debug_request::DebugRequest,
     //debug_response::DebugResponse,
     //debug_event::DebugEvent,
     commands::Commands,
+    debug_request::DebugRequest,
 };
 
 use debug_adapter::DebugAdapter;
 
-
 use log::info;
 
 use rust_debug::utils::in_ranges;
-
 
 use probe_rs::{Probe, Session};
 
@@ -28,43 +25,35 @@ use object::{Object, ObjectSection};
 
 use gimli::{read::EndianRcSlice, DebugFrame, Dwarf, Error, LittleEndian, Reader, Section, Unit};
 
-use futures::{
-    executor::block_on,
-    FutureExt,
-    pin_mut,
-    select,
-    future::FusedFuture,
-};
+use futures::{executor::block_on, future::FusedFuture, pin_mut, select, FutureExt};
 use structopt::StructOpt;
 
 use anyhow::{anyhow, Context, Result};
-
 
 use chrono::Local;
 use env_logger::*;
 use log::{error, LevelFilter};
 
 // use async_std::{io, task, io::ReadExt};
-use async_std::{io, task};
-use async_std::net::{SocketAddr, TcpListener, TcpStream};
 use async_std::io::BufReader;
+use async_std::net::{SocketAddr, TcpListener, TcpStream};
+use async_std::{io, task};
 //use async_std::io::{BufRead, BufReader, Read};
 
-
-use std::path::Path;
-use std::{borrow, fs};
-use std::rc::Rc;
-use std::time::Duration;
-use std::path::PathBuf;
-use std::str::FromStr;
 use std::io::Write;
-
+use std::path::Path;
+use std::path::PathBuf;
+use std::rc::Rc;
+use std::str::FromStr;
+use std::time::Duration;
+use std::{borrow, fs};
 
 #[derive(Debug, Clone)]
 enum Mode {
     Debug,
     DebugAdapter,
-} impl FromStr for Mode {
+}
+impl FromStr for Mode {
     type Err = &'static str;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -119,7 +108,6 @@ fn main() -> Result<()> {
     block_on(future)
 }
 
-
 async fn async_main() -> Result<()> {
     let opt = Opt::from_args();
 
@@ -155,7 +143,6 @@ async fn async_main() -> Result<()> {
     }
 }
 
-
 /*
  *  Run the debugger as a CLI application.
  *
@@ -164,7 +151,7 @@ async fn async_main() -> Result<()> {
  *      * CLI: Text input to Request.
  *      * Poller Event: Timer that is used to tell the event loop to poll the state of the
  *      debug target device.
- *  3. Event loop: Handle the results from the tasks. 
+ *  3. Event loop: Handle the results from the tasks.
  */
 async fn cli_mode(opt: Opt) -> Result<()> {
     // Setup needed variables
@@ -202,7 +189,7 @@ async fn cli_mode(opt: Opt) -> Result<()> {
                     cli_task.set(cli::handle_input(&stdin, &commands).fuse())
                 }
             },
-            () = heartbeat_task => { 
+            () = heartbeat_task => {
                 // Check if debug target state has changed
                 if let Ok(Some(event)) = debug_handler.poll_state() {
                     cli::handle_event(&event);
@@ -219,10 +206,9 @@ async fn cli_mode(opt: Opt) -> Result<()> {
     Ok(())
 }
 
-
 /*
  * Run the CLI and TCP server listening for a new connection.
- * 
+ *
  * When new connection is established the server starts to listen for DAP messages
  * and continues with the CLI task.
  */
@@ -233,7 +219,6 @@ async fn server_mode(opt: Opt) -> Result<()> {
     // Setup TCP server
     let addr = SocketAddr::from(([127, 0, 0, 1], opt.port.clone()));
     let listner = TcpListener::bind(addr).await?;
-
 
     // Create the tasks
     let cli_task = cli::simple_handle_input(&stdin).fuse();
@@ -264,29 +249,27 @@ async fn server_mode(opt: Opt) -> Result<()> {
                 //if tcp_connect_task.is_terminated() {
                 //    tcp_connect_task.set(listner.accept().fuse());
                 //}
-            }, 
+            },
         }
     }
 
     Ok(())
 }
 
-
 /*
  * Run the CLI, DAP server and Debugger tasks.
- * 
+ *
  * If connection is stopped then return to the previous state of listening for TCP connections.
  */
 async fn debug_server(opt: Opt, socket: TcpStream, stdin: &io::Stdin) -> Result<()> {
     // Setup needed variables
     let sleep_duration = 100;
-    
 
     // Setup debugger
     let mut debug_handler = debugger::NewDebugHandler::new(opt, load_loader);
 
     // Setup DAP server
-//    let mut reader = BufReader::new(socket.clone());
+    //    let mut reader = BufReader::new(socket.clone());
     let writer = socket.clone();
     let mut debug_adapter = DebugAdapter::new(writer);
 
@@ -311,7 +294,7 @@ async fn debug_server(opt: Opt, socket: TcpStream, stdin: &io::Stdin) -> Result<
                     cli_task.set(cli::simple_handle_input(&stdin).fuse())
                 }
             },
-            () = heartbeat_task => { 
+            () = heartbeat_task => {
                 // Check if debug target state has changed
                 if let Ok(Some(event)) = debug_handler.poll_state() {
                     debug_adapter.handle_event(event).await?;
@@ -325,8 +308,8 @@ async fn debug_server(opt: Opt, socket: TcpStream, stdin: &io::Stdin) -> Result<
             dap_msg = msg_task => {
                 let msg = dap_msg?;
                 println!("< {:#?}", msg);
-               
-                // Recreate the task. 
+
+                // Recreate the task.
                 if msg_task.is_terminated() {
                     msg_task.set(debug_adapter::read_dap_msg(BufReader::new(socket.clone())).fuse());
                 }
@@ -335,7 +318,7 @@ async fn debug_server(opt: Opt, socket: TcpStream, stdin: &io::Stdin) -> Result<
                 if debug_adapter.handle_dap_message(&mut debug_handler, msg).await? {
                     break;
                 }
-            }, 
+            },
         }
     }
 
@@ -343,8 +326,6 @@ async fn debug_server(opt: Opt, socket: TcpStream, stdin: &io::Stdin) -> Result<
     info!("Debug adapter session stopped");
     Ok(())
 }
-
-
 
 fn attach_probe(chip: &str, probe_num: usize) -> Result<Session> {
     // Get a list of all available debug probes.
@@ -364,24 +345,14 @@ fn attach_probe(chip: &str, probe_num: usize) -> Result<Session> {
     Ok(session)
 }
 
-
-
 fn load_loader(data: &[u8]) -> EndianRcSlice<LittleEndian> {
-   gimli::read::EndianRcSlice::new(
-       Rc::from(&*data),
-       gimli::LittleEndian,
-   )
+    gimli::read::EndianRcSlice::new(Rc::from(&*data), gimli::LittleEndian)
 }
-
-
 
 fn read_dwarf<'a, R: Reader<Offset = usize>>(
     path: &Path,
     load_loader: fn(data: &[u8]) -> R,
-) -> Result<(
-    Dwarf<R>,
-    DebugFrame<R>,
-)> {
+) -> Result<(Dwarf<R>, DebugFrame<R>)> {
     let file = fs::File::open(&path)?;
     let mmap = unsafe { memmap::Mmap::map(&file)? };
     let object = object::File::parse(&*mmap)?;
@@ -393,7 +364,6 @@ fn read_dwarf<'a, R: Reader<Offset = usize>>(
             .and_then(|section| section.uncompressed_data().ok())
             .unwrap_or_else(|| borrow::Cow::Borrowed(&[][..]));
 
-        
         Ok(load_loader(&*data))
     };
 

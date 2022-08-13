@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use async_std::io::{BufReader, ReadExt, Read, Write, WriteExt};
+use async_std::io::{BufReader, Read, ReadExt, Write, WriteExt};
 use async_std::prelude::*;
 
 use anyhow::{anyhow, Result};
@@ -9,9 +9,8 @@ use log::{debug, error, info, trace, warn};
 
 use debugserver_types::{
     Breakpoint, Capabilities, ContinueResponseBody, DisconnectArguments, EvaluateResponseBody,
-    Event, InitializedEvent, ProtocolMessage, Request, Response,
-    SetBreakpointsArguments, SetBreakpointsResponseBody, StackTraceResponseBody, Thread,
-    ThreadsResponseBody,
+    Event, InitializedEvent, ProtocolMessage, Request, Response, SetBreakpointsArguments,
+    SetBreakpointsResponseBody, StackTraceResponseBody, Thread, ThreadsResponseBody,
 };
 
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
@@ -35,9 +34,7 @@ pub struct DebugAdapter<W: Write + Unpin> {
 }
 
 impl<W: Write + Unpin> DebugAdapter<W> {
-    pub fn new(
-        writer: W,
-    ) -> DebugAdapter<W> {
+    pub fn new(writer: W) -> DebugAdapter<W> {
         DebugAdapter {
             first_msg: true,
             seq: 0,
@@ -45,11 +42,11 @@ impl<W: Write + Unpin> DebugAdapter<W> {
         }
     }
 
-    pub async fn handle_dap_message<R: Reader<Offset = usize>>(&mut self,
-                                    debug_handler: &mut NewDebugHandler<R>,
-                                    dap_msg: DebugAdapterMessage
-                                    ) -> Result<bool> {
-       
+    pub async fn handle_dap_message<R: Reader<Offset = usize>>(
+        &mut self,
+        debug_handler: &mut NewDebugHandler<R>,
+        dap_msg: DebugAdapterMessage,
+    ) -> Result<bool> {
         match dap_msg {
             DebugAdapterMessage::Request(req) => self.handle_dap_request(debug_handler, req).await,
             DebugAdapterMessage::Response(_res) => todo!(),
@@ -57,33 +54,58 @@ impl<W: Write + Unpin> DebugAdapter<W> {
         }
     }
 
-    pub async fn handle_dap_request<R: Reader<Offset = usize>>(&mut self,
-                                    debug_handler: &mut NewDebugHandler<R>,
-                                    request: Request,
-                                    ) -> Result<bool> {
+    pub async fn handle_dap_request<R: Reader<Offset = usize>>(
+        &mut self,
+        debug_handler: &mut NewDebugHandler<R>,
+        request: Request,
+    ) -> Result<bool> {
         let result = match request.command.as_ref() {
             "initialize" => self.handle_init_dap_request(&request).await,
             "launch" => self.handle_launch_dap_request(&request).await,
-            "attach" => self.handle_attach_dap_request(debug_handler, &request).await,
-            "setBreakpoints" => self.handle_set_breakpoints_dap_request(debug_handler, &request).await,
+            "attach" => {
+                self.handle_attach_dap_request(debug_handler, &request)
+                    .await
+            }
+            "setBreakpoints" => {
+                self.handle_set_breakpoints_dap_request(debug_handler, &request)
+                    .await
+            }
             "threads" => self.handle_threads_dap_request(&request).await,
             //  "setDataBreakpoints"        => Ok(()), // TODO
             //  "setExceptionBreakpoints"   => Ok(()), // TODO
             "configurationDone" => self.handle_configuration_done_dap_request(&request).await,
             "pause" => self.handle_pause_dap_request(debug_handler, &request).await,
-            "stackTrace" => self.handle_stack_trace_dap_request(debug_handler, &request).await,
-            "disconnect" => self.handle_disconnect_dap_request(debug_handler, &request).await,
-            "continue" => self.handle_continue_dap_request(debug_handler, &request).await,
-            "scopes" => self.handle_scopes_dap_request(debug_handler, &request).await,
+            "stackTrace" => {
+                self.handle_stack_trace_dap_request(debug_handler, &request)
+                    .await
+            }
+            "disconnect" => {
+                self.handle_disconnect_dap_request(debug_handler, &request)
+                    .await
+            }
+            "continue" => {
+                self.handle_continue_dap_request(debug_handler, &request)
+                    .await
+            }
+            "scopes" => {
+                self.handle_scopes_dap_request(debug_handler, &request)
+                    .await
+            }
             "source" => {
                 error!("Unimpleemted");
                 Ok(false) // NOTE: Return Error maybe
             }
-            "variables" => self.handle_variables_dap_request(debug_handler, &request).await,
+            "variables" => {
+                self.handle_variables_dap_request(debug_handler, &request)
+                    .await
+            }
             "next" => self.handle_next_dap_request(debug_handler, &request).await,
             "stepIn" => self.handle_next_dap_request(debug_handler, &request).await, // TODO
             "stepOut" => self.handle_next_dap_request(debug_handler, &request).await, // TODO
-            "evaluate" => self.handle_evaluate_dap_request(debug_handler, &request).await,
+            "evaluate" => {
+                self.handle_evaluate_dap_request(debug_handler, &request)
+                    .await
+            }
             _ => {
                 error!("command: {}", request.command);
                 Err(anyhow!("Unimpleemted command: {}", request.command))
@@ -109,7 +131,7 @@ impl<W: Write + Unpin> DebugAdapter<W> {
 
                 Ok(false)
             }
-        }        
+        }
     }
 
     pub async fn handle_event(&mut self, event: DebugEvent) -> Result<()> {
@@ -146,13 +168,13 @@ impl<W: Write + Unpin> DebugAdapter<W> {
                         type_: "event".to_owned(),
                     })?,
                     self.seq,
-                ).await?;
+                )
+                .await?;
             }
         };
 
         Ok(())
     }
-
 
     async fn handle_init_dap_request(&mut self, request: &Request) -> Result<bool> {
         self.first_msg = false;
@@ -185,7 +207,8 @@ impl<W: Write + Unpin> DebugAdapter<W> {
                 event: "initialized".to_owned(),
             })?,
             self.seq,
-        ).await?;
+        )
+        .await?;
 
         Ok(false)
     }
@@ -195,11 +218,11 @@ impl<W: Write + Unpin> DebugAdapter<W> {
         Ok(false) // NOTE: return error maybe
     }
 
-
-    async fn handle_attach_dap_request<R: Reader<Offset = usize>>(&mut self,
-                                       debug_handler: &mut NewDebugHandler<R>,
-                                       request: &Request
-                                       ) -> Result<bool> {
+    async fn handle_attach_dap_request<R: Reader<Offset = usize>>(
+        &mut self,
+        debug_handler: &mut NewDebugHandler<R>,
+        request: &Request,
+    ) -> Result<bool> {
         let args: AttachRequestArguments = get_arguments(&request)?;
         debug!("attach args: {:#?}", args);
         info!("program: {:?}", args.program);
@@ -216,7 +239,7 @@ impl<W: Write + Unpin> DebugAdapter<W> {
         match args.cwd {
             Some(cwd) => {
                 // Set Current Working Directory (CWD)
-                let _cwd_ack = debug_handler.handle_request(DebugRequest::SetCWD {cwd})?;
+                let _cwd_ack = debug_handler.handle_request(DebugRequest::SetCWD { cwd })?;
             }
             None => (),
         };
@@ -301,10 +324,11 @@ impl<W: Write + Unpin> DebugAdapter<W> {
         Ok(false)
     }
 
-    async fn handle_pause_dap_request<R: Reader<Offset = usize>>(&mut self,
-                                      debug_handler: &mut NewDebugHandler<R>,
-                                      request: &Request
-                                      ) -> Result<bool> {
+    async fn handle_pause_dap_request<R: Reader<Offset = usize>>(
+        &mut self,
+        debug_handler: &mut NewDebugHandler<R>,
+        request: &Request,
+    ) -> Result<bool> {
         // Send halt DebugRequest
         let _ack = debug_handler.handle_request(DebugRequest::Halt)?;
 
@@ -322,10 +346,11 @@ impl<W: Write + Unpin> DebugAdapter<W> {
         Ok(false)
     }
 
-    async fn handle_stack_trace_dap_request<R: Reader<Offset = usize>>(&mut self,
-                                            debug_handler: &mut NewDebugHandler<R>,
-                                            request: &Request
-                                            ) -> Result<bool> {
+    async fn handle_stack_trace_dap_request<R: Reader<Offset = usize>>(
+        &mut self,
+        debug_handler: &mut NewDebugHandler<R>,
+        request: &Request,
+    ) -> Result<bool> {
         let args: debugserver_types::StackTraceArguments = get_arguments(&request)?;
         debug!("args: {:?}", args);
 
@@ -362,10 +387,11 @@ impl<W: Write + Unpin> DebugAdapter<W> {
         Ok(false)
     }
 
-    async fn handle_scopes_dap_request<R: Reader<Offset = usize>>(&mut self,
-                                                                  debug_handler: &mut NewDebugHandler<R>,
-                                                                  request: &Request
-                                                                  ) -> Result<bool> {
+    async fn handle_scopes_dap_request<R: Reader<Offset = usize>>(
+        &mut self,
+        debug_handler: &mut NewDebugHandler<R>,
+        request: &Request,
+    ) -> Result<bool> {
         let args: debugserver_types::ScopesArguments = get_arguments(&request)?;
         debug!("args: {:?}", args);
 
@@ -400,10 +426,11 @@ impl<W: Write + Unpin> DebugAdapter<W> {
         Ok(false)
     }
 
-    async fn handle_variables_dap_request<R: Reader<Offset = usize>>(&mut self,
-                                                                     debug_handler: &mut NewDebugHandler<R>,
-                                                                     request: &Request
-                                                                     ) -> Result<bool> {
+    async fn handle_variables_dap_request<R: Reader<Offset = usize>>(
+        &mut self,
+        debug_handler: &mut NewDebugHandler<R>,
+        request: &Request,
+    ) -> Result<bool> {
         let args: debugserver_types::VariablesArguments = get_arguments(&request)?;
         debug!("args: {:?}", args);
 
@@ -441,9 +468,7 @@ impl<W: Write + Unpin> DebugAdapter<W> {
             });
         }
 
-        let body = debugserver_types::VariablesResponseBody {
-            variables,
-        };
+        let body = debugserver_types::VariablesResponseBody { variables };
 
         let response = Response {
             body: Some(json!(body)),
@@ -460,10 +485,11 @@ impl<W: Write + Unpin> DebugAdapter<W> {
         Ok(false)
     }
 
-    async fn handle_continue_dap_request<R: Reader<Offset = usize>>(&mut self,
-                                         debug_handler: &mut NewDebugHandler<R>,
-                                         request: &Request
-                                         ) -> Result<bool> {
+    async fn handle_continue_dap_request<R: Reader<Offset = usize>>(
+        &mut self,
+        debug_handler: &mut NewDebugHandler<R>,
+        request: &Request,
+    ) -> Result<bool> {
         // Send continue DebugRequest
         let _ack = debug_handler.handle_request(DebugRequest::Continue)?;
 
@@ -486,10 +512,11 @@ impl<W: Write + Unpin> DebugAdapter<W> {
         Ok(false)
     }
 
-    async fn handle_disconnect_dap_request<R: Reader<Offset = usize>>(&mut self,
-                                           debug_handler: &mut NewDebugHandler<R>,
-                                           request: &Request
-                                           ) -> Result<bool> {
+    async fn handle_disconnect_dap_request<R: Reader<Offset = usize>>(
+        &mut self,
+        debug_handler: &mut NewDebugHandler<R>,
+        request: &Request,
+    ) -> Result<bool> {
         let args: DisconnectArguments = get_arguments(&request)?;
         debug!("args: {:?}", args);
         // TODO: Stop the debuggee, if conditions are meet
@@ -512,10 +539,11 @@ impl<W: Write + Unpin> DebugAdapter<W> {
         Ok(true)
     }
 
-    async fn handle_next_dap_request<R: Reader<Offset = usize>>(&mut self,
-                                                                debug_handler: &mut NewDebugHandler<R>,
-                                                                request: &Request,
-                                                                ) -> Result<bool> {
+    async fn handle_next_dap_request<R: Reader<Offset = usize>>(
+        &mut self,
+        debug_handler: &mut NewDebugHandler<R>,
+        request: &Request,
+    ) -> Result<bool> {
         // Send Step DebugRequest
         let _ack = debug_handler.handle_request(DebugRequest::Step)?;
 
@@ -534,10 +562,11 @@ impl<W: Write + Unpin> DebugAdapter<W> {
         Ok(false)
     }
 
-    async fn handle_evaluate_dap_request<R: Reader<Offset = usize>>(&mut self,
-                                                                    _debug_handler: &mut NewDebugHandler<R>,
-                                                                    request: &Request
-                                                                    ) -> Result<bool> {
+    async fn handle_evaluate_dap_request<R: Reader<Offset = usize>>(
+        &mut self,
+        _debug_handler: &mut NewDebugHandler<R>,
+        request: &Request,
+    ) -> Result<bool> {
         // TODO: Implement this feature
         let body = EvaluateResponseBody {
             result: "This feature is not yet implemented".to_owned(),
@@ -563,10 +592,11 @@ impl<W: Write + Unpin> DebugAdapter<W> {
         Ok(false)
     }
 
-    async fn handle_set_breakpoints_dap_request<R: Reader<Offset = usize>>(&mut self,
-                                                debug_handler: &mut NewDebugHandler<R>,
-                                                request: &Request
-                                                ) -> Result<bool> {
+    async fn handle_set_breakpoints_dap_request<R: Reader<Offset = usize>>(
+        &mut self,
+        debug_handler: &mut NewDebugHandler<R>,
+        request: &Request,
+    ) -> Result<bool> {
         let args: SetBreakpointsArguments = get_arguments(request)?;
         debug!("args: {:#?}", args);
 
@@ -597,9 +627,7 @@ impl<W: Write + Unpin> DebugAdapter<W> {
             None => vec![],
         };
 
-        let body = SetBreakpointsResponseBody {
-            breakpoints,
-        };
+        let body = SetBreakpointsResponseBody { breakpoints };
 
         let response = Response {
             body: Some(json!(body)),
@@ -617,8 +645,9 @@ impl<W: Write + Unpin> DebugAdapter<W> {
     }
 }
 
-
-pub async fn read_dap_msg<R: Read + Unpin>(mut reader: BufReader<R>) -> Result<DebugAdapterMessage, anyhow::Error> {
+pub async fn read_dap_msg<R: Read + Unpin>(
+    mut reader: BufReader<R>,
+) -> Result<DebugAdapterMessage, anyhow::Error> {
     let mut header = String::new();
 
     reader.read_line(&mut header).await?;
@@ -648,7 +677,6 @@ pub async fn read_dap_msg<R: Read + Unpin>(mut reader: BufReader<R>) -> Result<D
     Ok(msg)
 }
 
-
 fn get_content_len(header: &str) -> Option<usize> {
     let mut parts = header.trim_end().split_ascii_whitespace();
 
@@ -657,14 +685,12 @@ fn get_content_len(header: &str) -> Option<usize> {
     parts.next()?.parse::<usize>().ok()
 }
 
-
 #[derive(Debug)]
 pub enum DebugAdapterMessage {
     Request(Request),
     Response(Response),
     Event(Event),
 }
-
 
 pub fn get_arguments<T: DeserializeOwned>(req: &Request) -> Result<T> {
     let value = match req.arguments.as_ref() {
@@ -676,7 +702,6 @@ pub fn get_arguments<T: DeserializeOwned>(req: &Request) -> Result<T> {
     };
     from_value(value.to_owned()).map_err(|e| e.into())
 }
-
 
 pub async fn send_data<W: Write + Unpin>(writer: &mut W, raw_data: &[u8], seq: i64) -> Result<i64> {
     let resp_body = raw_data;
@@ -696,7 +721,6 @@ pub async fn send_data<W: Write + Unpin>(writer: &mut W, raw_data: &[u8], seq: i
     Ok(seq + 1)
 }
 
-
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct StoppedEventBody {
@@ -709,7 +733,6 @@ pub struct StoppedEventBody {
     pub hit_breakpoint_ids: Option<Vec<u32>>,
 }
 
-
 #[derive(Deserialize, Debug, Default)]
 struct AttachRequestArguments {
     program: String,
@@ -719,7 +742,6 @@ struct AttachRequestArguments {
     halt_after_reset: Option<bool>,
     flash: Option<bool>,
 }
-
 
 //#[derive(Deserialize, Debug, Default)]
 //struct LaunchRequestArguments {

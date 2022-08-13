@@ -1,10 +1,8 @@
 use async_std::io;
 
-use super::{
-    commands::{
-        commands::Commands, debug_event::DebugEvent, debug_request::DebugRequest,
-        debug_response::DebugResponse,
-    },
+use super::commands::{
+    commands::Commands, debug_event::DebugEvent, debug_request::DebugRequest,
+    debug_response::DebugResponse,
 };
 use crate::debugger::StackFrame;
 use crate::debugger::Variable;
@@ -13,13 +11,11 @@ use debugserver_types::Breakpoint;
 use log::error;
 use probe_rs::CoreStatus;
 
-
 pub async fn handle_input(stdin: &io::Stdin, cmd_parser: &Commands) -> Result<DebugRequest> {
     loop {
         // Read next line asynchronously
         let mut line = String::new();
         stdin.read_line(&mut line).await?;
-
 
         let request = match cmd_parser.parse_command(line.as_ref()) {
             Ok(cmd) => cmd,
@@ -32,13 +28,12 @@ pub async fn handle_input(stdin: &io::Stdin, cmd_parser: &Commands) -> Result<De
     }
 }
 
-
 pub async fn simple_handle_input(stdin: &io::Stdin) -> Result<bool> {
     loop {
         // Read next line asynchronously
         let mut line = String::new();
         stdin.read_line(&mut line).await?;
-    
+
         return Ok(match line.as_str() {
             "q\n" => true,
             "quit\n" => true,
@@ -49,60 +44,57 @@ pub async fn simple_handle_input(stdin: &io::Stdin) -> Result<bool> {
     }
 }
 
-
 pub fn handle_response(stdout: &mut io::Stdout, response: &DebugResponse) -> Result<bool> {
-        //println!("{:?}", response);
-        match response.to_owned() {
-            DebugResponse::Exit => return Ok(true),
+    //println!("{:?}", response);
+    match response.to_owned() {
+        DebugResponse::Exit => return Ok(true),
 
-            DebugResponse::Attach => handle_attach_response(),
-            DebugResponse::Status { status, pc } => handle_status_response(status, pc),
-            DebugResponse::Continue => handle_continue_response(),
-            DebugResponse::Step => handle_step_response(),
-            DebugResponse::Halt => handle_halt_response(),
-            DebugResponse::SetBinary => handle_set_binary_response(),
-            DebugResponse::Flash => handle_flash_response(),
-            DebugResponse::Reset => handle_reset_response(),
-            DebugResponse::Read { address, value } => handle_read_response(address, value),
-            DebugResponse::StackTrace { stack_trace } => {
-                handle_stack_trace_response(stack_trace)
-            }
-            DebugResponse::SetProbeNumber => handle_set_probe_number_response(),
-            DebugResponse::SetChip => handle_set_chip_response(),
-            DebugResponse::Variable { variable } => handle_variable_response(variable),
-            DebugResponse::Variables { variables } => handle_variables_response(variables),
-            DebugResponse::Registers { registers } => handle_registers_response(registers),
-            DebugResponse::SetBreakpoint => handle_set_breakpoint_response(),
-            DebugResponse::SetBreakpoints { breakpoints } => {
-                handle_set_breakpoints_response(breakpoints)
-            }
-            DebugResponse::ClearBreakpoint => handle_clear_breakpoint_response(),
-            DebugResponse::ClearAllBreakpoints => handle_clear_all_breakpoints_response(),
-            DebugResponse::Code { pc, instructions } => handle_code_response(pc, instructions),
-            DebugResponse::Stack {
-                stack_pointer,
-                stack,
-            } => handle_stack_response(stack_pointer, stack),
-            DebugResponse::Error { message } => handle_error_response(message),
-            DebugResponse::SetCWD => handle_set_cwd_response(),
-            DebugResponse::DAPStackFrames { stack_frames: _ } => {
-                error!("Unreachable");
-                return Err(anyhow!("Unreachable"));
-            }
-            DebugResponse::DAPScopes { scopes: _ } => {
-                error!("Unreachable");
-                return Err(anyhow!("Unreachable"));
-            }
-            DebugResponse::DAPVariables { variables: _ } => {
-                error!("Unreachable");
-                return Err(anyhow!("Unreachable"));
-            }
-        };
+        DebugResponse::Attach => handle_attach_response(),
+        DebugResponse::Status { status, pc } => handle_status_response(status, pc),
+        DebugResponse::Continue => handle_continue_response(),
+        DebugResponse::Step => handle_step_response(),
+        DebugResponse::Halt => handle_halt_response(),
+        DebugResponse::SetBinary => handle_set_binary_response(),
+        DebugResponse::Flash => handle_flash_response(),
+        DebugResponse::Reset => handle_reset_response(),
+        DebugResponse::Read { address, value } => handle_read_response(address, value),
+        DebugResponse::StackTrace { stack_trace } => handle_stack_trace_response(stack_trace),
+        DebugResponse::SetProbeNumber => handle_set_probe_number_response(),
+        DebugResponse::SetChip => handle_set_chip_response(),
+        DebugResponse::Variable { variable } => handle_variable_response(variable),
+        DebugResponse::Variables { variables } => handle_variables_response(variables),
+        DebugResponse::Registers { registers } => handle_registers_response(registers),
+        DebugResponse::SetBreakpoint => handle_set_breakpoint_response(),
+        DebugResponse::SetBreakpoints { breakpoints } => {
+            handle_set_breakpoints_response(breakpoints)
+        }
+        DebugResponse::ClearBreakpoint => handle_clear_breakpoint_response(),
+        DebugResponse::ClearAllBreakpoints => handle_clear_all_breakpoints_response(),
+        DebugResponse::Code { pc, instructions } => handle_code_response(pc, instructions),
+        DebugResponse::Stack {
+            stack_pointer,
+            stack,
+        } => handle_stack_response(stack_pointer, stack),
+        DebugResponse::Error { message } => handle_error_response(message),
+        DebugResponse::SetCWD => handle_set_cwd_response(),
+        DebugResponse::DAPStackFrames { stack_frames: _ } => {
+            error!("Unreachable");
+            return Err(anyhow!("Unreachable"));
+        }
+        DebugResponse::DAPScopes { scopes: _ } => {
+            error!("Unreachable");
+            return Err(anyhow!("Unreachable"));
+        }
+        DebugResponse::DAPVariables { variables: _ } => {
+            error!("Unreachable");
+            return Err(anyhow!("Unreachable"));
+        }
+    };
 
-        Ok(false)
+    Ok(false)
 }
 
-pub fn handle_event(event: &DebugEvent)  {
+pub fn handle_event(event: &DebugEvent) {
     println!("{:?}", event);
     match event {
         DebugEvent::Halted {
@@ -204,7 +196,7 @@ fn print_stack_frame(stack_frame: &StackFrame) {
             None => "< unknown >",
         }
     );
-    
+
     println!("\tArguments:");
     for var in &stack_frame.arguments {
         let name = match var.name.clone() {
@@ -235,7 +227,7 @@ fn handle_set_chip_response() {
 
 fn handle_variable_response(variable: Variable) {
     //println!("{:#?}", variable);
-    
+
     let name = match variable.name.clone() {
         Some(n) => n,
         None => "< unknown >".to_owned(),
@@ -267,7 +259,7 @@ fn handle_variable_response(variable: Variable) {
         }
         None => (),
     };
-//    println!("\tLocation: {:?}", variable.location);
+    //    println!("\tLocation: {:?}", variable.location);
 }
 
 fn handle_variables_response(variables: Vec<Variable>) {
@@ -330,4 +322,3 @@ fn handle_error_response(message: String) {
 fn handle_set_cwd_response() {
     println!("Current work directory set");
 }
-
