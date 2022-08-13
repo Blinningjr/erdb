@@ -3,7 +3,7 @@ pub mod config;
 use config::Config;
 
 use rust_debug::call_stack::{CallFrame, MemoryAccess};
-use rust_debug::evaluate::evaluate::{get_udata, EvaluatorValue};
+use rust_debug::evaluate::evaluate::{get_udata, EvaluatorValue, BaseTypeValue};
 use rust_debug::registers::Registers;
 use rust_debug::source_information::{find_breakpoint_location, SourceInformation};
 
@@ -29,6 +29,7 @@ use regex::Regex;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Duration;
+use std::str;
 
 
 
@@ -785,15 +786,20 @@ impl<R: Reader<Offset = usize>> DebugSession<R> {
         let core = self.session.core(0)?;
         let mut my_core = MyCore { core };
 
+        log::debug!("start stack trace");
+
         read_and_add_registers(&mut my_core.core, &mut self.registers)?;
+        log::debug!("read registers");
+
         let stack_trace = rust_debug::call_stack::stack_trace(
             &self.debug_info.dwarf,
             &self.debug_info.debug_frame,
             self.registers.clone(),
             &mut my_core,
             &self.cwd,
-        )?;
-        self.stack_trace = Some(resolve_stack_trace(stack_trace)?);
+        ).unwrap();
+        log::debug!("stack trace done");
+        self.stack_trace = Some(resolve_stack_trace(stack_trace, &mut my_core.core)?);
 
         Ok(())
     }
@@ -907,7 +913,7 @@ impl<R: Reader<Offset = usize>> DebugSession<R> {
 
             // Crate and add StackFrame object
             stack_frames.push(debugserver_types::StackFrame {
-                id: id,
+                id,
                 name: s.name.clone(),
                 source: Some(source),
                 line: match source_info.line {
@@ -1138,8 +1144,17 @@ impl Variable {
 
     pub fn resolve_varialbe<R: Reader<Offset = usize>>(
         var: &rust_debug::variable::Variable<R>,
+        core: &mut probe_rs::Core,
     ) -> Result<Variable> {
         //        println!("raw_var: {:#?}\n\n", var);
+        //match var.name.clone() {
+        //    Some(v) => {
+        //        if v == "test_str" {
+        //            println!("test_u32: {:#?}", var);
+        //        }
+        //    },
+        //    _=>(),
+        //};
         let mut variable = Variable {
             id: 0,
             name: var.name.clone(),
@@ -1150,7 +1165,7 @@ impl Variable {
             children: vec![],
         };
 
-        variable.evaluate(&var.value, &var.source)?;
+        variable.evaluate(&var.value, &var.source, core)?;
 
         //println!("p_variable: {:#?}\n\n", variable);
 
@@ -1161,6 +1176,7 @@ impl Variable {
         &mut self,
         value: &EvaluatorValue<R>,
         source: &Option<SourceInformation>,
+        core: &mut probe_rs::Core,
     ) -> Result<()> {
         match value {
             EvaluatorValue::Value(val, _) => {
@@ -1172,7 +1188,7 @@ impl Variable {
                     Some(name) => self.type_ = format!("{}::{}", self.type_, name),
                     None => (),
                 };
-                self.evaluate(&pointer_type.value, source)?;
+                self.evaluate(&pointer_type.value, source, core)?;
             }
             EvaluatorValue::VariantValue(variant_value) => {
                 let name = match variant_value.discr_value {
@@ -1194,13 +1210,14 @@ impl Variable {
                 variable.evaluate(
                     &EvaluatorValue::Member(Box::new(variant_value.child.clone())),
                     source,
+                    core,
                 )?;
                 self.children.push(variable);
             }
             EvaluatorValue::VariantPartValue(variant_part) => {
                 match &variant_part.variant {
                     Some(variant) => {
-                        self.evaluate(&EvaluatorValue::Member(Box::new(variant.clone())), source)?;
+                        self.evaluate(&EvaluatorValue::Member(Box::new(variant.clone())), source, core)?;
                         let mut child = self.children.pop().ok_or(anyhow!("Error"))?;
                         match &child.name {
                             Some(_) => (),
@@ -1224,6 +1241,7 @@ impl Variable {
                     self.evaluate(
                         &EvaluatorValue::VariantValue(Box::new(variant_value.clone())),
                         source,
+                        core,
                     )?;
                 }
             }
@@ -1256,6 +1274,7 @@ impl Variable {
                                 variable.evaluate(
                                     &EvaluatorValue::<R>::Value(base_type_value, loc),
                                     source,
+                                    core,
                                 )?;
                                 self.children.push(variable);
                             }
@@ -1284,6 +1303,7 @@ impl Variable {
                         array_type_value.subrange_type_value.clone(),
                     ),
                     source,
+                    core,
                 )?;
                 for i in 0..array_type_value.values.len() {
                     let mut variable = Variable {
@@ -1295,18 +1315,76 @@ impl Variable {
                         kind: VariableKind::Indexed,
                         children: vec![],
                     };
-                    variable.evaluate(&array_type_value.values[i], source)?;
+                    variable.evaluate(&array_type_value.values[i], source, core)?;
                     self.children.push(variable);
                 }
             }
             EvaluatorValue::Struct(structure_type_value) => {
                 //self.name = Some(structure_type_value.name.clone());
+                
+
                 self.kind = VariableKind::Named;
                 self.type_ = format!("{}::{}", self.type_, structure_type_value.name.clone());
-                self.value = structure_type_value.name.clone();
 
-                for member in &structure_type_value.members {
-                    self.evaluate(member, source)?;
+                let name = structure_type_value.name.clone();
+                if (name.contains("str") || name.contains("String")) {
+                    // TODO: Redesign how string are evaluated
+
+                    let mut num_bytes = 0;
+                    let mut address = 0;
+                    for member in &structure_type_value.members {
+                        match member {
+                            EvaluatorValue::Member(m) => {
+                                match m.value.clone() {
+                                    EvaluatorValue::PointerTypeValue(ptv) => {
+                                        match ptv.address.clone() {
+                                            EvaluatorValue::Value(v, _) => {
+                                                address = match v {
+                                                    BaseTypeValue::Address32(a) => a,
+                                                    //BaseTypeValue::Generic(a) => a as u32,
+                                                    BaseTypeValue::U8(a) => a as u32,
+                                                    BaseTypeValue::U16(a) => a as u32,
+                                                    BaseTypeValue::U32(a) => a,
+                                                    //BaseTypeValue::U64(a) => a as u32,
+                                                    _ => unimplemented!(),
+                                                };
+                                            },
+                                            _ => panic!("ptv.value: {:#?}", ptv.value),
+                                        };
+                                    },
+                                    EvaluatorValue::Value(v, _) => {
+                                        num_bytes = match v {
+                                            BaseTypeValue::Address32(a) => a as usize,
+                                            BaseTypeValue::Generic(a) => a as usize,
+                                            BaseTypeValue::U8(a) => a as usize,
+                                            BaseTypeValue::U16(a) => a as usize,
+                                            BaseTypeValue::U32(a) => a as usize,
+                                            BaseTypeValue::U64(a) => a as usize,
+                                            _ => unimplemented!(),
+                                        };
+                                    },
+                                    _ => panic!("m: {:#?}", m.value),
+                                };
+                            },
+                            _ => unreachable!(),
+                        };
+                    }
+                    let mut raw_string = vec![0u8; num_bytes];
+                    core.read_8(address, &mut raw_string)?;
+                    match str::from_utf8(raw_string.as_ref()) {
+                        Ok(v) => self.value = format!("{:?}", v),
+                        Err(_err) => {
+                            self.value = structure_type_value.name.clone();
+                            for member in &structure_type_value.members {
+                                self.evaluate(member, source, core)?;
+                            }
+                        },
+                    };
+                } else {
+                    self.value = structure_type_value.name.clone();
+                    for member in &structure_type_value.members {
+                        self.evaluate(member, source, core)?;
+                    }
                 }
             }
             EvaluatorValue::Enum(enumeration_type_value) => {
@@ -1337,7 +1415,7 @@ impl Variable {
                 self.kind = VariableKind::Named;
                 self.type_ = format!("{}::{}", self.type_, union_type_value.name);
                 for member in &union_type_value.members {
-                    self.evaluate(member, source)?;
+                    self.evaluate(member, source, core)?;
                 }
             }
             EvaluatorValue::Member(member_value) => {
@@ -1373,7 +1451,7 @@ impl Variable {
                     kind,
                     children: vec![],
                 };
-                variable.evaluate(&member_value.value, source)?;
+                variable.evaluate(&member_value.value, source, core)?;
                 self.children.push(variable);
             }
             EvaluatorValue::OptimizedOut => self.value = "< OptimizedOut >".to_string(),
@@ -1397,20 +1475,21 @@ pub struct StackFrame {
 impl StackFrame {
     pub fn resolve_stackframe<R: Reader<Offset = usize>>(
         frame: &rust_debug::call_stack::StackFrame<R>,
+        core: &mut probe_rs::Core,
     ) -> Result<StackFrame> {
         let mut variables = vec![];
         for var in &frame.variables {
-            variables.push(Variable::resolve_varialbe(var)?);
+            variables.push(Variable::resolve_varialbe(var, core)?);
         }
 
         let mut arguments = vec![];
         for var in &frame.arguments {
-            arguments.push(Variable::resolve_varialbe(var)?);
+            arguments.push(Variable::resolve_varialbe(var, core)?);
         }
 
         let mut registers = vec![];
         for var in &frame.registers {
-            registers.push(Variable::resolve_varialbe(var)?);
+            registers.push(Variable::resolve_varialbe(var, core)?);
         }
 
         Ok(StackFrame {
@@ -1440,10 +1519,11 @@ impl StackFrame {
 
 pub fn resolve_stack_trace<R: Reader<Offset = usize>>(
     stack_frames: Vec<rust_debug::call_stack::StackFrame<R>>,
+    core: &mut probe_rs::Core,
 ) -> Result<Vec<StackFrame>> {
     let mut stack_trace = vec![];
     for sf in &stack_frames {
-        stack_trace.push(StackFrame::resolve_stackframe(sf)?);
+        stack_trace.push(StackFrame::resolve_stackframe(sf, core)?);
     }
     Ok(stack_trace)
 }

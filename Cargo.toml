@@ -29,5 +29,5 @@ futures = "0.3.21"
 async-std = "1.7"
 rustyline-async = "0.2"
 
-#rust-debug = { path = "/home/niklas/Desktop/exjobb/rust-debug" }  
+#rust-debug = { path = "/home/niklas/exjobb/rust-debug" }  
 rust-debug = { git = "https://github.com/Blinningjr/rust-debug.git" }

@@ -204,6 +204,15 @@ fn print_stack_frame(stack_frame: &StackFrame) {
             None => "< unknown >",
         }
     );
+    
+    println!("\tArguments:");
+    for var in &stack_frame.arguments {
+        let name = match var.name.clone() {
+            Some(n) => n,
+            None => "< unknown >".to_owned(),
+        };
+        println!("\t\t{} = {}", name, var.value_to_string());
+    }
 
     println!("\tVariables:");
     for var in &stack_frame.variables {
@@ -225,11 +234,14 @@ fn handle_set_chip_response() {
 }
 
 fn handle_variable_response(variable: Variable) {
+    //println!("{:#?}", variable);
+    
     let name = match variable.name.clone() {
         Some(n) => n,
         None => "< unknown >".to_owned(),
     };
     println!("\t{} = {}", name, variable.value_to_string());
+    println!("\ttype = {}", variable.type_);
     match &variable.source {
         Some(source) => {
             match source.line {
@@ -255,7 +267,7 @@ fn handle_variable_response(variable: Variable) {
         }
         None => (),
     };
-    //println!("Location: {:?}", variable.location);
+//    println!("\tLocation: {:?}", variable.location);
 }
 
 fn handle_variables_response(variables: Vec<Variable>) {
