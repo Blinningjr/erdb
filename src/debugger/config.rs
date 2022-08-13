@@ -1,10 +1,10 @@
 use std::path::PathBuf;
 
 pub struct Config {
-    pub elf_file_path:  Option<PathBuf>,
-    pub chip:           Option<String>,
+    pub elf_file_path: Option<PathBuf>,
+    pub chip: Option<String>,
     pub work_directory: Option<String>,
-    pub probe_num:      usize,
+    pub probe_num: usize,
 }
 
 impl Config {
@@ -40,4 +40,3 @@ impl Config {
         error
     }
 }
-

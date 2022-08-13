@@ -1,4 +1,4 @@
-use super::{debug_request::DebugRequest};
+use super::debug_request::DebugRequest;
 
 use anyhow::{anyhow, Result};
 
@@ -222,7 +222,8 @@ impl Commands {
                     parser: |_args| Ok(DebugRequest::CycleCounter),
                 },
                 CommandInfo {
-                    name: "trace", description:
+                    name: "trace",
+                    description:
                         "Trace cycle counter at breakpoint instructions until `bkpt_end` is reached",
                     parser: |_args| Ok(DebugRequest::Trace),
                 },
@@ -232,7 +233,7 @@ impl Commands {
 
     pub fn parse_command(&self, line: &str) -> Result<DebugRequest> {
         if let Some(description) = self.check_if_help(line) {
-            return Ok(DebugRequest::Help{description});
+            return Ok(DebugRequest::Help { description });
         }
 
         let mut command_parts = line.split_whitespace();

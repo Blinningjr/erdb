@@ -3,7 +3,7 @@ pub mod config;
 use config::Config;
 
 use rust_debug::call_stack::{CallFrame, MemoryAccess};
-use rust_debug::evaluate::evaluate::{get_udata, EvaluatorValue, BaseTypeValue};
+use rust_debug::evaluate::evaluate::{get_udata, BaseTypeValue, EvaluatorValue};
 use rust_debug::registers::Registers;
 use rust_debug::source_information::{find_breakpoint_location, SourceInformation};
 
@@ -28,10 +28,8 @@ use probe_rs::{CoreStatus, MemoryInterface};
 use regex::Regex;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::time::Duration;
 use std::str;
-
-
+use std::time::Duration;
 
 pub struct NewDebugHandler<R: Reader<Offset = usize>> {
     config: Config,
@@ -39,17 +37,14 @@ pub struct NewDebugHandler<R: Reader<Offset = usize>> {
     load_loader: fn(data: &[u8]) -> R,
 }
 impl<R: Reader<Offset = usize>> NewDebugHandler<R> {
-    pub fn new(
-                opt: Opt, 
-                load_loader: fn(data: &[u8]) -> R,
-            ) -> NewDebugHandler<R> {
+    pub fn new(opt: Opt, load_loader: fn(data: &[u8]) -> R) -> NewDebugHandler<R> {
         NewDebugHandler {
             config: Config::new(opt),
             session: None,
             load_loader,
         }
     }
-    
+
     pub fn handle_request(&mut self, request: DebugRequest) -> Result<DebugResponse> {
         // TODO: if request handled in this function then exit session.
         Ok(match request {
@@ -57,58 +52,55 @@ impl<R: Reader<Offset = usize>> NewDebugHandler<R> {
             DebugRequest::SetBinary { path } => {
                 self.config.elf_file_path = Some(path);
                 DebugResponse::SetBinary
-            },
+            }
             DebugRequest::SetProbeNumber { number } => {
                 self.config.probe_num = number;
                 DebugResponse::SetProbeNumber
-            },
+            }
             DebugRequest::SetChip { chip } => {
                 self.config.chip = Some(chip);
                 DebugResponse::SetChip
-            },
+            }
             DebugRequest::SetCWD { cwd } => {
                 self.config.work_directory = Some(cwd);
                 DebugResponse::SetCWD
-            },
-            _ => {
-                match &mut self.session {
-                    Some(session) => session.handle_request(request)?,
-                    None => {
-                        if self.config.is_missing_config() {
-                            DebugResponse::Error {
-                                message: self.config.missing_config_message(),
-                            }
-                        } else {
-                            self.session = Some(DebugSession::new(
-                                    match self.config.elf_file_path.clone() {
-                                        Some(val) => val,
-                                        None => {
-                                            unreachable!();
-                                        }
-                                    },
-                                    self.config.probe_num,
-                                    match self.config.chip.clone() {
-                                        Some(val) => val,
-                                        None => {
-                                            unreachable!();
-                                        }
-                                    },
-                                    match self.config.work_directory.clone() {
-                                        Some(val) => val,
-                                        None => {
-                                            unreachable!();
-                                        }
-                                    },
-                                    self.load_loader
-                                )?);
-                            self.handle_request(request)?
+            }
+            _ => match &mut self.session {
+                Some(session) => session.handle_request(request)?,
+                None => {
+                    if self.config.is_missing_config() {
+                        DebugResponse::Error {
+                            message: self.config.missing_config_message(),
                         }
-                    },
+                    } else {
+                        self.session = Some(DebugSession::new(
+                            match self.config.elf_file_path.clone() {
+                                Some(val) => val,
+                                None => {
+                                    unreachable!();
+                                }
+                            },
+                            self.config.probe_num,
+                            match self.config.chip.clone() {
+                                Some(val) => val,
+                                None => {
+                                    unreachable!();
+                                }
+                            },
+                            match self.config.work_directory.clone() {
+                                Some(val) => val,
+                                None => {
+                                    unreachable!();
+                                }
+                            },
+                            self.load_loader,
+                        )?);
+                        self.handle_request(request)?
+                    }
                 }
             },
         })
     }
-
 
     pub fn poll_state(&mut self) -> Result<Option<DebugEvent>> {
         match &mut self.session {
@@ -137,12 +129,12 @@ pub struct DebugSession<R: Reader<Offset = usize>> {
 
 impl<R: Reader<Offset = usize>> DebugSession<R> {
     pub fn new(
-            file_path: PathBuf,
-            probe_number: usize,
-            chip: String,
-            cwd: String,
-            load_loader: fn(data: &[u8]) -> R,
-        ) -> Result<DebugSession<R>> {
+        file_path: PathBuf,
+        probe_number: usize,
+        chip: String,
+        cwd: String,
+        load_loader: fn(data: &[u8]) -> R,
+    ) -> Result<DebugSession<R>> {
         let capstone = capstone::Capstone::new() // TODO: Set the capstone base on the arch of the chip.
             .arm()
             .mode(capstone::arch::arm::ArchMode::Thumb)
@@ -186,10 +178,9 @@ impl<R: Reader<Offset = usize>> DebugSession<R> {
         })
     }
 
-//    pub fn handle_request(&mut self, request: DebugRequest) -> Result<DebugResponse> {
-//        Ok(DebugResponse::Exit) // TODO
-//    }
-    
+    //    pub fn handle_request(&mut self, request: DebugRequest) -> Result<DebugResponse> {
+    //        Ok(DebugResponse::Exit) // TODO
+    //    }
 
     pub fn handle_request(&mut self, request: DebugRequest) -> Result<DebugResponse> {
         match request {
@@ -257,7 +248,7 @@ impl<R: Reader<Offset = usize>> DebugSession<R> {
                 };
 
                 if self.trace {
-                    drop(core); 
+                    drop(core);
                     todo!(); //self.trace_event(pc);
                 } else {
                     return Ok(Some(DebugEvent::Halted {
@@ -267,8 +258,8 @@ impl<R: Reader<Offset = usize>> DebugSession<R> {
                     }));
                 }
             }
-        } 
-        
+        }
+
         Ok(None)
     }
 
@@ -279,7 +270,6 @@ impl<R: Reader<Offset = usize>> DebugSession<R> {
         self.scopes = None;
         self.variables = None;
     }
-
 
     fn attach_command(&mut self, reset: bool, reset_and_halt: bool) -> Result<DebugResponse> {
         if reset_and_halt {
@@ -708,9 +698,7 @@ impl<R: Reader<Offset = usize>> DebugSession<R> {
             breakpoints.push(breakpoint);
         }
 
-        Ok(DebugResponse::SetBreakpoints {
-            breakpoints,
-        })
+        Ok(DebugResponse::SetBreakpoints { breakpoints })
     }
 
     fn dap_stack_frames(&mut self) -> Result<DebugResponse> {
@@ -797,7 +785,8 @@ impl<R: Reader<Offset = usize>> DebugSession<R> {
             self.registers.clone(),
             &mut my_core,
             &self.cwd,
-        ).unwrap();
+        )
+        .unwrap();
         log::debug!("stack trace done");
         self.stack_trace = Some(resolve_stack_trace(stack_trace, &mut my_core.core)?);
 
@@ -988,9 +977,7 @@ impl<R: Reader<Offset = usize>> DebugSession<R> {
             Err(err) => Err(anyhow!(err)),
         }
     }
-
 }
-
 
 fn read_cycle_counter(core: &mut probe_rs::Core) -> Result<(u32, u32), probe_rs::Error> {
     let mut buff: Vec<u32> = vec![0; 1];
@@ -1217,7 +1204,11 @@ impl Variable {
             EvaluatorValue::VariantPartValue(variant_part) => {
                 match &variant_part.variant {
                     Some(variant) => {
-                        self.evaluate(&EvaluatorValue::Member(Box::new(variant.clone())), source, core)?;
+                        self.evaluate(
+                            &EvaluatorValue::Member(Box::new(variant.clone())),
+                            source,
+                            core,
+                        )?;
                         let mut child = self.children.pop().ok_or(anyhow!("Error"))?;
                         match &child.name {
                             Some(_) => (),
@@ -1321,7 +1312,6 @@ impl Variable {
             }
             EvaluatorValue::Struct(structure_type_value) => {
                 //self.name = Some(structure_type_value.name.clone());
-                
 
                 self.kind = VariableKind::Named;
                 self.type_ = format!("{}::{}", self.type_, structure_type_value.name.clone());
@@ -1348,10 +1338,10 @@ impl Variable {
                                                     //BaseTypeValue::U64(a) => a as u32,
                                                     _ => unimplemented!(),
                                                 };
-                                            },
+                                            }
                                             _ => panic!("ptv.value: {:#?}", ptv.value),
                                         };
-                                    },
+                                    }
                                     EvaluatorValue::Value(v, _) => {
                                         num_bytes = match v {
                                             BaseTypeValue::Address32(a) => a as usize,
@@ -1362,10 +1352,10 @@ impl Variable {
                                             BaseTypeValue::U64(a) => a as usize,
                                             _ => unimplemented!(),
                                         };
-                                    },
+                                    }
                                     _ => panic!("m: {:#?}", m.value),
                                 };
-                            },
+                            }
                             _ => unreachable!(),
                         };
                     }
@@ -1378,7 +1368,7 @@ impl Variable {
                             for member in &structure_type_value.members {
                                 self.evaluate(member, source, core)?;
                             }
-                        },
+                        }
                     };
                 } else {
                     self.value = structure_type_value.name.clone();
