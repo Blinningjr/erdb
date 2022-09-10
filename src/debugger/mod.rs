@@ -46,7 +46,6 @@ impl<R: Reader<Offset = usize>> NewDebugHandler<R> {
     }
 
     pub fn handle_request(&mut self, request: DebugRequest) -> Result<DebugResponse> {
-        // TODO: if request handled in this function then exit session.
         Ok(match request {
             DebugRequest::Exit => DebugResponse::Exit,
             DebugRequest::SetBinary { path } => {
@@ -178,9 +177,6 @@ impl<R: Reader<Offset = usize>> DebugSession<R> {
         })
     }
 
-    //    pub fn handle_request(&mut self, request: DebugRequest) -> Result<DebugResponse> {
-    //        Ok(DebugResponse::Exit) // TODO
-    //    }
 
     pub fn handle_request(&mut self, request: DebugRequest) -> Result<DebugResponse> {
         match request {

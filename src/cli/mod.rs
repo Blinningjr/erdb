@@ -44,11 +44,19 @@ pub async fn simple_handle_input(stdin: &io::Stdin) -> Result<bool> {
     }
 }
 
-pub fn handle_response(_stdout: &mut io::Stdout, response: &DebugResponse) -> Result<bool> {
-    //println!("{:?}", response);
-    match response.to_owned() {
-        DebugResponse::Exit => return Ok(true),
+pub fn handle_response(stdout: &mut io::Stdout, response: Result<DebugResponse>) -> Result<bool> {
+    match response {
+        Ok(val) => match_debug_response(stdout, val),
+        Err(err) => {
+            println!("ERDB Error: {}", err);
+            Ok(false)
+        },
+    }
+}
 
+fn match_debug_response(_stdout: &mut io::Stdout, response: DebugResponse) -> Result<bool> {
+    match response {
+        DebugResponse::Exit => return Ok(true),
         DebugResponse::Attach => handle_attach_response(),
         DebugResponse::Status { status, pc } => handle_status_response(status, pc),
         DebugResponse::Continue => handle_continue_response(),
@@ -93,6 +101,7 @@ pub fn handle_response(_stdout: &mut io::Stdout, response: &DebugResponse) -> Re
 
     Ok(false)
 }
+
 
 pub fn handle_event(event: &DebugEvent) {
     println!("{:?}", event);

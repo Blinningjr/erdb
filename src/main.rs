@@ -175,10 +175,10 @@ async fn cli_mode(opt: Opt) -> Result<()> {
                     DebugRequest::Help { description } => println!("{}", description),
                     request => {
                         // Execute request
-                        let response = debug_handler.handle_request(request)?;
+                        let response = debug_handler.handle_request(request);
 
                         // Print response to user and exit if requested
-                        if cli::handle_response(&mut stdout, &response)? {
+                        if cli::handle_response(&mut stdout, response)? {
                             break;
                         }
                     },
