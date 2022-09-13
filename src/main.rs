@@ -3,10 +3,21 @@ mod commands;
 mod debug_adapter;
 mod debugger;
 
-use rust_debug::utils::in_ranges;
+//use object::File;
+//use gimli::EndianReader;
 
-use std::path::Path;
-use std::{borrow, fs};
+use commands::{
+    //debug_response::DebugResponse,
+    //debug_event::DebugEvent,
+    commands::Commands,
+    debug_request::DebugRequest,
+};
+
+use debug_adapter::DebugAdapter;
+
+use log::info;
+
+use rust_debug::utils::in_ranges;
 
 use probe_rs::{Probe, Session};
 
@@ -14,26 +25,34 @@ use object::{Object, ObjectSection};
 
 use gimli::{read::EndianRcSlice, DebugFrame, Dwarf, Error, LittleEndian, Reader, Section, Unit};
 
-use std::rc::Rc;
-
-use std::path::PathBuf;
+use futures::{executor::block_on, future::FusedFuture, pin_mut, select, FutureExt};
 use structopt::StructOpt;
 
 use anyhow::{anyhow, Context, Result};
 
-use std::str::FromStr;
-
 use chrono::Local;
 use env_logger::*;
 use log::{error, LevelFilter};
-use std::io::Write;
 
-#[derive(Debug)]
+// use async_std::{io, task, io::ReadExt};
+use async_std::io::BufReader;
+use async_std::net::{SocketAddr, TcpListener, TcpStream};
+use async_std::{io, task};
+//use async_std::io::{BufRead, BufReader, Read};
+
+use std::io::Write;
+use std::path::Path;
+use std::path::PathBuf;
+use std::rc::Rc;
+use std::str::FromStr;
+use std::time::Duration;
+use std::{borrow, fs};
+
+#[derive(Debug, Clone)]
 enum Mode {
     Debug,
     DebugAdapter,
 }
-
 impl FromStr for Mode {
     type Err = &'static str;
 
@@ -48,7 +67,7 @@ impl FromStr for Mode {
     }
 }
 
-#[derive(Debug, StructOpt)]
+#[derive(Debug, StructOpt, Clone)]
 #[structopt(
     name = "embedded-rust-debugger",
     about = "A simple and extendable debugger for embedded Rust."
@@ -85,6 +104,11 @@ pub struct Opt {
 }
 
 fn main() -> Result<()> {
+    let future = async_main();
+    block_on(future)
+}
+
+async fn async_main() -> Result<()> {
     let opt = Opt::from_args();
 
     // Setup log
@@ -114,9 +138,193 @@ fn main() -> Result<()> {
         .init();
 
     match opt.mode {
-        Mode::Debug => cli::debug_mode(opt),
-        Mode::DebugAdapter => debug_adapter::start_tcp_server(opt.port),
+        Mode::Debug => cli_mode(opt).await,
+        Mode::DebugAdapter => server_mode(opt).await,
     }
+}
+
+/*
+ *  Run the debugger as a CLI application.
+ *
+ *  1. Create needed data structures, like one for debugging state.
+ *  2. Create the different tasks.
+ *      * CLI: Text input to Request.
+ *      * Poller Event: Timer that is used to tell the event loop to poll the state of the
+ *      debug target device.
+ *  3. Event loop: Handle the results from the tasks.
+ */
+async fn cli_mode(opt: Opt) -> Result<()> {
+    // Setup needed variables
+    let stdin = io::stdin();
+    let mut stdout = io::stdout();
+    let commands = Commands::new();
+    let sleep_duration = 100;
+
+    let mut debug_handler = debugger::NewDebugHandler::new(opt, load_loader);
+
+    // Create the tasks
+    let cli_task = cli::handle_input(&stdin, &commands).fuse();
+    let heartbeat_task = task::sleep(Duration::from_millis(sleep_duration)).fuse();
+    pin_mut!(cli_task, heartbeat_task);
+
+    // Event loop
+    loop {
+        select! {
+            c = cli_task => {
+                match c? {
+                    DebugRequest::Help { description } => println!("{}", description),
+                    request => {
+                        // Execute request
+                        let response = debug_handler.handle_request(request);
+
+                        // Print response to user and exit if requested
+                        if cli::handle_response(&mut stdout, response)? {
+                            break;
+                        }
+                    },
+                };
+
+                // Restart the task
+                if cli_task.is_terminated() {
+                    cli_task.set(cli::handle_input(&stdin, &commands).fuse())
+                }
+            },
+            () = heartbeat_task => {
+                // Check if debug target state has changed
+                if let Ok(Some(event)) = debug_handler.poll_state() {
+                    cli::handle_event(&event);
+                }
+
+                // Restart the task
+                if heartbeat_task.is_terminated() {
+                    heartbeat_task.set(task::sleep(Duration::from_millis(sleep_duration)).fuse());
+                }
+            },
+        }
+    }
+
+    Ok(())
+}
+
+/*
+ * Run the CLI and TCP server listening for a new connection.
+ *
+ * When new connection is established the server starts to listen for DAP messages
+ * and continues with the CLI task.
+ */
+async fn server_mode(opt: Opt) -> Result<()> {
+    // Setup needed variables
+    let stdin = io::stdin();
+
+    // Setup TCP server
+    let addr = SocketAddr::from(([127, 0, 0, 1], opt.port.clone()));
+    let listner = TcpListener::bind(addr).await?;
+
+    // Create the tasks
+    let cli_task = cli::simple_handle_input(&stdin).fuse();
+    let tcp_connect_task = listner.accept().fuse();
+    pin_mut!(cli_task, tcp_connect_task);
+
+    // Event loop
+    loop {
+        select! {
+            c = cli_task => {
+                if c? {
+                    break;
+                }
+
+                // Restart the task
+                if cli_task.is_terminated() {
+                    cli_task.set(cli::simple_handle_input(&stdin).fuse())
+                }
+            },
+            connection = tcp_connect_task => {
+                let (socket, addr) = connection?;
+                info!("Accepted connection from {}", addr);
+                println!("Accepted connection from {}", addr);
+
+                debug_server(opt.clone(), socket.clone(), &stdin).await?;
+                break; // TODO: Add flag that determines if the server should stop or not.
+
+                //if tcp_connect_task.is_terminated() {
+                //    tcp_connect_task.set(listner.accept().fuse());
+                //}
+            },
+        }
+    }
+
+    Ok(())
+}
+
+/*
+ * Run the CLI, DAP server and Debugger tasks.
+ *
+ * If connection is stopped then return to the previous state of listening for TCP connections.
+ */
+async fn debug_server(opt: Opt, socket: TcpStream, stdin: &io::Stdin) -> Result<()> {
+    // Setup needed variables
+    let sleep_duration = 100;
+
+    // Setup debugger
+    let mut debug_handler = debugger::NewDebugHandler::new(opt, load_loader);
+
+    // Setup DAP server
+    //    let mut reader = BufReader::new(socket.clone());
+    let writer = socket.clone();
+    let mut debug_adapter = DebugAdapter::new(writer);
+
+    // Create the tasks
+    let cli_task = cli::simple_handle_input(&stdin).fuse();
+    let heartbeat_task = task::sleep(Duration::from_millis(sleep_duration)).fuse();
+    let msg_task = debug_adapter::read_dap_msg(BufReader::new(socket.clone())).fuse();
+
+    // Pin the task to the stack
+    pin_mut!(cli_task, heartbeat_task, msg_task);
+
+    // Event loop
+    loop {
+        select! {
+            c = cli_task => {
+                if c? {
+                    break;
+                }
+
+                // Restart the task
+                if cli_task.is_terminated() {
+                    cli_task.set(cli::simple_handle_input(&stdin).fuse())
+                }
+            },
+            () = heartbeat_task => {
+                // Check if debug target state has changed
+                if let Ok(Some(event)) = debug_handler.poll_state() {
+                    debug_adapter.handle_event(event).await?;
+                }
+
+                // Restart the task
+                if heartbeat_task.is_terminated() {
+                    heartbeat_task.set(task::sleep(Duration::from_millis(sleep_duration)).fuse());
+                }
+            },
+            dap_msg = msg_task => {
+                let msg = dap_msg?;
+                println!("< {:#?}", msg);
+
+                // Recreate the task.
+                if msg_task.is_terminated() {
+                    msg_task.set(debug_adapter::read_dap_msg(BufReader::new(socket.clone())).fuse());
+                }
+
+                // Handle DAP request.
+                if debug_adapter.handle_dap_message(&mut debug_handler, msg).await? {
+                    break;
+                }
+            },
+        }
+    }
+
+    println!("Debug adapter session stopped");
+    info!("Debug adapter session stopped");
+    Ok(())
 }
 
 fn attach_probe(chip: &str, probe_num: usize) -> Result<Session> {
@@ -137,27 +345,26 @@ fn attach_probe(chip: &str, probe_num: usize) -> Result<Session> {
     Ok(session)
 }
 
-fn read_dwarf<'a>(
+fn load_loader(data: &[u8]) -> EndianRcSlice<LittleEndian> {
+    gimli::read::EndianRcSlice::new(Rc::from(&*data), gimli::LittleEndian)
+}
+
+fn read_dwarf<'a, R: Reader<Offset = usize>>(
     path: &Path,
-) -> Result<(
-    Dwarf<EndianRcSlice<LittleEndian>>,
-    DebugFrame<EndianRcSlice<LittleEndian>>,
-)> {
+    load_loader: fn(data: &[u8]) -> R,
+) -> Result<(Dwarf<R>, DebugFrame<R>)> {
     let file = fs::File::open(&path)?;
     let mmap = unsafe { memmap::Mmap::map(&file)? };
     let object = object::File::parse(&*mmap)?;
 
     // Load a section and return as `Cow<[u8]>`.
-    let loader = |id: gimli::SectionId| -> Result<EndianRcSlice<LittleEndian>, gimli::Error> {
+    let loader = |id: gimli::SectionId| -> Result<R, gimli::Error> {
         let data = object
             .section_by_name(id.name())
             .and_then(|section| section.uncompressed_data().ok())
             .unwrap_or_else(|| borrow::Cow::Borrowed(&[][..]));
 
-        Ok(gimli::read::EndianRcSlice::new(
-            Rc::from(&*data),
-            gimli::LittleEndian,
-        ))
+        Ok(load_loader(&*data))
     };
 
     // Load a supplementary section. We don't have a supplementary object file,

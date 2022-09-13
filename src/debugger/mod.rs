@@ -3,7 +3,7 @@ pub mod config;
 use config::Config;
 
 use rust_debug::call_stack::{CallFrame, MemoryAccess};
-use rust_debug::evaluate::evaluate::{get_udata, EvaluatorValue};
+use rust_debug::evaluate::evaluate::{get_udata, BaseTypeValue, EvaluatorValue};
 use rust_debug::registers::Registers;
 use rust_debug::source_information::{find_breakpoint_location, SourceInformation};
 
@@ -14,14 +14,13 @@ use gimli::Dwarf;
 use gimli::Reader;
 
 use super::commands::{
-    debug_event::DebugEvent, debug_request::DebugRequest, debug_response::DebugResponse, Command,
+    debug_event::DebugEvent, debug_request::DebugRequest, debug_response::DebugResponse,
 };
 
 use super::Opt;
 use super::{attach_probe, read_dwarf};
 use anyhow::{anyhow, Context, Result};
 use capstone::arch::BuildsCapstone;
-use crossbeam_channel::{Receiver, Sender, TryRecvError};
 use debugserver_types::{Breakpoint, SourceBreakpoint};
 use log::{error, info, warn};
 use probe_rs::flashing::{download_file, Format};
@@ -29,185 +28,94 @@ use probe_rs::{CoreStatus, MemoryInterface};
 use regex::Regex;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::time::{Duration, Instant};
+use std::str;
+use std::time::Duration;
 
-pub struct DebugHandler {
+pub struct NewDebugHandler<R: Reader<Offset = usize>> {
     config: Config,
+    session: Option<DebugSession<R>>,
+    load_loader: fn(data: &[u8]) -> R,
 }
-
-impl DebugHandler {
-    pub fn new(opt: Opt) -> DebugHandler {
-        DebugHandler {
+impl<R: Reader<Offset = usize>> NewDebugHandler<R> {
+    pub fn new(opt: Opt, load_loader: fn(data: &[u8]) -> R) -> NewDebugHandler<R> {
+        NewDebugHandler {
             config: Config::new(opt),
+            session: None,
+            load_loader,
         }
     }
 
-    pub fn new_default() -> DebugHandler {
-        DebugHandler {
-            config: Config {
-                elf_file_path: None,
-                chip: None,
-                work_directory: None,
-                probe_num: 0,
-            },
-        }
-    }
-
-    pub fn run(
-        &mut self,
-        mut sender: Sender<Command>,
-        mut receiver: Receiver<DebugRequest>,
-    ) -> Result<()> {
-        loop {
-            let request = receiver.recv()?;
-            let (exit, response) = match self.handle_request(&mut sender, &mut receiver, request) {
-                Ok(val) => val,
-                Err(err) => {
-                    sender.send(Command::Response(DebugResponse::Error {
-                        message: format!("{:?}", err),
-                    }))?;
-                    continue;
-                }
-            };
-            sender.send(Command::Response(response))?;
-
-            if exit {
-                return Ok(());
-            }
-        }
-    }
-
-    fn handle_request(
-        &mut self,
-        sender: &mut Sender<Command>,
-        receiver: &mut Receiver<DebugRequest>,
-        request: DebugRequest,
-    ) -> Result<(bool, DebugResponse)> {
-        match request {
-            DebugRequest::Exit => Ok((true, DebugResponse::Exit)),
+    pub fn handle_request(&mut self, request: DebugRequest) -> Result<DebugResponse> {
+        Ok(match request {
+            DebugRequest::Exit => DebugResponse::Exit,
             DebugRequest::SetBinary { path } => {
                 self.config.elf_file_path = Some(path);
-                Ok((false, DebugResponse::SetBinary))
+                DebugResponse::SetBinary
             }
             DebugRequest::SetProbeNumber { number } => {
                 self.config.probe_num = number;
-                Ok((false, DebugResponse::SetProbeNumber))
+                DebugResponse::SetProbeNumber
             }
             DebugRequest::SetChip { chip } => {
                 self.config.chip = Some(chip);
-                Ok((false, DebugResponse::SetChip))
+                DebugResponse::SetChip
             }
             DebugRequest::SetCWD { cwd } => {
                 self.config.work_directory = Some(cwd);
-                Ok((false, DebugResponse::SetCWD))
+                DebugResponse::SetCWD
             }
-            _ => {
-                if self.config.is_missing_config() {
-                    return Ok((
-                        false,
+            _ => match &mut self.session {
+                Some(session) => session.handle_request(request)?,
+                None => {
+                    if self.config.is_missing_config() {
                         DebugResponse::Error {
                             message: self.config.missing_config_message(),
-                        },
-                    ));
+                        }
+                    } else {
+                        self.session = Some(DebugSession::new(
+                            match self.config.elf_file_path.clone() {
+                                Some(val) => val,
+                                None => {
+                                    unreachable!();
+                                }
+                            },
+                            self.config.probe_num,
+                            match self.config.chip.clone() {
+                                Some(val) => val,
+                                None => {
+                                    unreachable!();
+                                }
+                            },
+                            match self.config.work_directory.clone() {
+                                Some(val) => val,
+                                None => {
+                                    unreachable!();
+                                }
+                            },
+                            self.load_loader,
+                        )?);
+                        self.handle_request(request)?
+                    }
                 }
+            },
+        })
+    }
 
-                let new_request = init(
-                    sender,
-                    receiver,
-                    match self.config.elf_file_path.clone() {
-                        Some(val) => val,
-                        None => {
-                            error!("Requires elf file path");
-                            return Err(anyhow!("Requires elf file path"));
-                        }
-                    },
-                    self.config.probe_num,
-                    match self.config.chip.clone() {
-                        Some(val) => val,
-                        None => {
-                            error!("Requires chip");
-                            return Err(anyhow!("Requires chip"));
-                        }
-                    },
-                    match self.config.work_directory.clone() {
-                        Some(val) => val,
-                        None => {
-                            error!("Requires elf file path");
-                            return Err(anyhow!("Requires elf file path"));
-                        }
-                    },
-                    request,
-                )?;
-                self.handle_request(sender, receiver, new_request)
-            }
+    pub fn poll_state(&mut self) -> Result<Option<DebugEvent>> {
+        match &mut self.session {
+            Some(session) => session.poll_state(),
+            None => Ok(None),
         }
     }
 }
 
-pub fn init(
-    sender: &mut Sender<Command>,
-    receiver: &mut Receiver<DebugRequest>,
-    file_path: PathBuf,
-    probe_number: usize,
-    chip: String,
-    cwd: String,
-    request: DebugRequest,
-) -> Result<DebugRequest> {
-    let cs = capstone::Capstone::new() // TODO: Set the capstone base on the arch of the chip.
-        .arm()
-        .mode(capstone::arch::arm::ArchMode::Thumb)
-        .build()
-        .expect("Failed to create Capstone object");
-
-    let (owned_dwarf, owned_debug_frame) = read_dwarf(&file_path)?;
-    let debug_info = DebugInformation::new(&owned_dwarf, &owned_debug_frame);
-
-    let mut session = attach_probe(&chip, probe_number)?;
-
-    let (pc_reg, link_reg, sp_reg) = {
-        let core = session.core(0)?;
-        let pc_reg =
-            probe_rs::CoreRegisterAddress::from(core.registers().program_counter()).0 as usize;
-        let link_reg =
-            probe_rs::CoreRegisterAddress::from(core.registers().return_address()).0 as usize;
-        let sp_reg =
-            probe_rs::CoreRegisterAddress::from(core.registers().stack_pointer()).0 as usize;
-        (pc_reg, link_reg, sp_reg)
-    };
-    let mut registers = Registers::new();
-    registers.program_counter_register = Some(pc_reg);
-    registers.link_register = Some(link_reg);
-    registers.stack_pointer_register = Some(sp_reg);
-
-    let mut debugger = Debugger {
-        capstone: cs,
-        debug_info,
-        session,
-        breakpoints: HashMap::new(),
-        file_path,
-        cwd,
-        check_time: Instant::now(),
-        running: true,
-        registers,
-        stack_trace: None,
-        stack_frames: None,
-        scopes: None,
-        variables: None,
-        id_gen: IdGen::new(),
-        trace: false,
-    };
-
-    debugger.run(sender, receiver, request)
-}
-
-struct Debugger<'a, R: Reader<Offset = usize>> {
-    debug_info: DebugInformation<'a, R>,
+pub struct DebugSession<R: Reader<Offset = usize>> {
+    debug_info: DebugInformation<R>,
     session: probe_rs::Session,
     capstone: capstone::Capstone,
     breakpoints: HashMap<u32, Breakpoint>,
     file_path: PathBuf,
     cwd: String,
-    check_time: Instant,
     running: bool,
     registers: Registers,
     stack_trace: Option<Vec<StackFrame>>,
@@ -218,119 +126,59 @@ struct Debugger<'a, R: Reader<Offset = usize>> {
     trace: bool,
 }
 
-impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
-    pub fn run(
-        &mut self,
-        sender: &mut Sender<Command>,
-        receiver: &mut Receiver<DebugRequest>,
-        request: DebugRequest,
-    ) -> Result<DebugRequest> {
-        match self.handle_request(request)? {
-            Command::Request(req) => return Ok(req),
-            Command::Response(res) => sender.send(Command::Response(res))?,
-            _ => {
-                error!("Unimplemented");
-                return Err(anyhow!("Unimplemented"));
-            }
+impl<R: Reader<Offset = usize>> DebugSession<R> {
+    pub fn new(
+        file_path: PathBuf,
+        probe_number: usize,
+        chip: String,
+        cwd: String,
+        load_loader: fn(data: &[u8]) -> R,
+    ) -> Result<DebugSession<R>> {
+        let capstone = capstone::Capstone::new() // TODO: Set the capstone base on the arch of the chip.
+            .arm()
+            .mode(capstone::arch::arm::ArchMode::Thumb)
+            .build()
+            .expect("Failed to create Capstone object");
+
+        let (owned_dwarf, owned_debug_frame) = read_dwarf::<R>(&file_path, load_loader)?;
+        let debug_info = DebugInformation::new(owned_dwarf, owned_debug_frame);
+
+        let mut session = attach_probe(&chip, probe_number)?;
+
+        let (pc_reg, link_reg, sp_reg) = {
+            let core = session.core(0)?;
+            let pc_reg =
+                probe_rs::CoreRegisterAddress::from(core.registers().program_counter()).0 as usize;
+            let link_reg =
+                probe_rs::CoreRegisterAddress::from(core.registers().return_address()).0 as usize;
+            let sp_reg =
+                probe_rs::CoreRegisterAddress::from(core.registers().stack_pointer()).0 as usize;
+            (pc_reg, link_reg, sp_reg)
         };
-
-        loop {
-            match receiver.try_recv() {
-                Ok(request) => {
-                    // we have recieved a request (either from CLI or DAP)
-                    match self.handle_request(request) {
-                        Ok(Command::Request(req)) => {
-                            let mut core = self.session.core(0)?;
-                            core.clear_all_hw_breakpoints()?;
-                            self.breakpoints = HashMap::new();
-
-                            return Ok(req);
-                        }
-                        Ok(Command::Response(res)) => sender.send(Command::Response(res))?,
-                        Ok(_) => {
-                            error!("Unimplemented");
-                            return Err(anyhow!("Unimplemented"));
-                        }
-                        Err(err) => {
-                            sender.send(Command::Response(DebugResponse::Error {
-                                message: format!("{:?}", err),
-                            }))?;
-                        }
-                    };
-                }
-                Err(err) => {
-                    match err {
-                        // commands to process, to check if halted
-                        TryRecvError::Empty => self.check_halted(sender)?,
-                        TryRecvError::Disconnected => {
-                            let mut core = self.session.core(0)?;
-                            core.clear_all_hw_breakpoints()?;
-                            self.breakpoints = HashMap::new();
-
-                            return Err(anyhow!("{:?}", err));
-                        }
-                    };
-                }
-            };
-        }
+        let mut registers = Registers::new();
+        registers.program_counter_register = Some(pc_reg);
+        registers.link_register = Some(link_reg);
+        registers.stack_pointer_register = Some(sp_reg);
+        Ok(DebugSession {
+            debug_info,
+            session,
+            capstone,
+            breakpoints: HashMap::new(),
+            file_path,
+            cwd,
+            running: true,
+            registers,
+            stack_trace: None,
+            stack_frames: None,
+            scopes: None,
+            variables: None,
+            id_gen: IdGen::new(),
+            trace: false,
+        })
     }
 
-    fn clear_temporaries(&mut self) {
-        self.registers.clear();
-        self.stack_trace = None;
-        self.stack_frames = None;
-        self.scopes = None;
-        self.variables = None;
-    }
 
-    fn check_halted(&mut self, sender: &mut Sender<Command>) -> Result<()> {
-        let delta = Duration::from_millis(400);
-        if self.running && self.check_time.elapsed() > delta {
-            self.check_time = Instant::now();
-            self.process_halt_event(sender)?;
-        }
-
-        Ok(())
-    }
-
-    fn process_halt_event(&mut self, sender: &mut Sender<Command>) -> Result<()> {
-        let mut core = self.session.core(0)?;
-        let status = core.status()?;
-
-        if let CoreStatus::Halted(reason) = status {
-            self.running = false;
-
-            let pc = core.read_core_reg(core.registers().program_counter())?;
-
-            let mut hit_breakpoint_ids = vec![];
-            match self.breakpoints.get(&pc) {
-                Some(bkpt) => hit_breakpoint_ids.push(match bkpt.id {
-                    Some(val) => val,
-                    None => {
-                        error!("Breakpoint id is required");
-                        return Err(anyhow!("Breakpoint id is required"));
-                    }
-                } as u32),
-                None => (),
-            };
-
-            if self.trace {
-                drop(core);
-                self.trace_event(pc)
-            } else {
-                sender.send(Command::Event(DebugEvent::Halted {
-                    pc: pc,
-                    reason: reason,
-                    hit_breakpoint_ids: Some(hit_breakpoint_ids),
-                }))?;
-                Ok(())
-            }
-        } else {
-            Ok(())
-        }
-    }
-
-    fn handle_request(&mut self, request: DebugRequest) -> Result<Command> {
+    pub fn handle_request(&mut self, request: DebugRequest) -> Result<DebugResponse> {
         match request {
             DebugRequest::Attach {
                 reset,
@@ -371,11 +219,55 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
             DebugRequest::CycleCounter => self.cycle_counter_command(),
             DebugRequest::Trace => self.trace_command(),
 
-            _ => Ok(Command::Request(request)),
+            _ => unreachable!(), //Ok(Command::Request(request)),
         }
     }
 
-    fn attach_command(&mut self, reset: bool, reset_and_halt: bool) -> Result<Command> {
+    pub fn poll_state(&mut self) -> Result<Option<DebugEvent>> {
+        if self.running {
+            let mut core = self.session.core(0)?;
+            let status = core.status()?;
+            if let CoreStatus::Halted(reason) = status {
+                self.running = false;
+
+                let pc = core.read_core_reg(core.registers().program_counter())?;
+                let mut hit_breakpoint_ids = vec![];
+                match self.breakpoints.get(&pc) {
+                    Some(bkpt) => hit_breakpoint_ids.push(match bkpt.id {
+                        Some(val) => val,
+                        None => {
+                            error!("Breakpoint id is required");
+                            return Err(anyhow!("Breakpoint id is required"));
+                        }
+                    } as u32),
+                    None => (),
+                };
+
+                if self.trace {
+                    drop(core);
+                    todo!(); //self.trace_event(pc);
+                } else {
+                    return Ok(Some(DebugEvent::Halted {
+                        pc: pc,
+                        reason: reason,
+                        hit_breakpoint_ids: Some(hit_breakpoint_ids),
+                    }));
+                }
+            }
+        }
+
+        Ok(None)
+    }
+
+    fn clear_temporaries(&mut self) {
+        self.registers.clear();
+        self.stack_trace = None;
+        self.stack_frames = None;
+        self.scopes = None;
+        self.variables = None;
+    }
+
+    fn attach_command(&mut self, reset: bool, reset_and_halt: bool) -> Result<DebugResponse> {
         if reset_and_halt {
             self.clear_temporaries();
             let mut core = self.session.core(0)?;
@@ -387,10 +279,10 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
             core.reset().context("Failed to reset the core")?;
         }
 
-        Ok(Command::Response(DebugResponse::Attach))
+        Ok(DebugResponse::Attach)
     }
 
-    fn stack_command(&mut self) -> Result<Command> {
+    fn stack_command(&mut self) -> Result<DebugResponse> {
         let mut core = self.session.core(0)?;
         let status = core.status()?;
 
@@ -404,26 +296,26 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
             if sf < sp {
                 // The previous stack pointer is less then current.
                 // This happens when there is no stack.
-                return Ok(Command::Response(DebugResponse::Stack {
+                return Ok(DebugResponse::Stack {
                     stack_pointer: sp,
                     stack: vec![],
-                }));
+                });
             }
 
             let length = (((sf - sp) + 4 - 1) / 4) as usize;
             let mut stack = vec![0u32; length];
             core.read_32(sp, &mut stack)?;
 
-            return Ok(Command::Response(DebugResponse::Stack {
+            return Ok(DebugResponse::Stack {
                 stack_pointer: sp,
                 stack: stack,
-            }));
+            });
         } else {
             return Err(anyhow!("Core must be halted"));
         }
     }
 
-    fn code_command(&mut self) -> Result<Command> {
+    fn code_command(&mut self) -> Result<DebugResponse> {
         let mut core = self.session.core(0)?;
         let status = core.status()?;
 
@@ -445,34 +337,34 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
                 instructions.push((i.address() as u32, i.to_string()));
             }
 
-            return Ok(Command::Response(DebugResponse::Code {
+            return Ok(DebugResponse::Code {
                 pc: pc_val,
                 instructions: instructions,
-            }));
+            });
         } else {
             warn!("Core is not halted, status: {:?}", status);
             return Err(anyhow!("Core must be halted"));
         }
     }
 
-    fn clear_all_breakpoints_command(&mut self) -> Result<Command> {
+    fn clear_all_breakpoints_command(&mut self) -> Result<DebugResponse> {
         let mut core = self.session.core(0)?;
         core.clear_all_hw_breakpoints()?;
         self.breakpoints = HashMap::new();
 
         info!("All breakpoints cleared");
 
-        Ok(Command::Response(DebugResponse::ClearAllBreakpoints))
+        Ok(DebugResponse::ClearAllBreakpoints)
     }
 
-    fn clear_breakpoint_command(&mut self, address: u32) -> Result<Command> {
+    fn clear_breakpoint_command(&mut self, address: u32) -> Result<DebugResponse> {
         let mut core = self.session.core(0)?;
 
         match self.breakpoints.remove(&address) {
             Some(_bkpt) => {
                 core.clear_hw_breakpoint(address)?;
                 info!("Breakpoint cleared from: 0x{:08x}", address);
-                Ok(Command::Response(DebugResponse::ClearBreakpoint))
+                Ok(DebugResponse::ClearBreakpoint)
             }
             None => {
                 core.clear_hw_breakpoint(address)?;
@@ -485,11 +377,11 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
         &mut self,
         mut address: u32,
         source_file: Option<String>,
-    ) -> Result<Command> {
+    ) -> Result<DebugResponse> {
         let mut core = self.session.core(0)?;
         address = match source_file {
             Some(path) => find_breakpoint_location(
-                self.debug_info.dwarf,
+                &self.debug_info.dwarf,
                 &self.cwd,
                 &path,
                 match NonZeroU64::new(address as u64) {
@@ -525,13 +417,13 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
             let _bkpt = self.breakpoints.insert(address, breakpoint);
 
             info!("Breakpoint set at: 0x{:08x}", address);
-            return Ok(Command::Response(DebugResponse::SetBreakpoint));
+            return Ok(DebugResponse::SetBreakpoint);
         } else {
             return Err(anyhow!("All hardware breakpoints are already set"));
         }
     }
 
-    fn registers_command(&mut self) -> Result<Command> {
+    fn registers_command(&mut self) -> Result<DebugResponse> {
         let mut core = self.session.core(0)?;
         let register_file = core.registers();
 
@@ -542,10 +434,10 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
             registers.push((format!("{}", register.name()), value));
         }
 
-        Ok(Command::Response(DebugResponse::Registers { registers }))
+        Ok(DebugResponse::Registers { registers })
     }
 
-    fn variable_command(&mut self, name: &str) -> Result<Command> {
+    fn variable_command(&mut self, name: &str) -> Result<DebugResponse> {
         let mut core = self.session.core(0)?;
         let status = core.status()?;
         drop(core);
@@ -559,13 +451,13 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
                     let variable = match stack_trace[0].find_variable(name) {
                         Some(var) => var.clone(),
                         None => {
-                            return Ok(Command::Response(DebugResponse::Error {
+                            return Ok(DebugResponse::Error {
                                 message: format!("Variable {:?} not found", name),
-                            }))
+                            })
                         }
                     };
 
-                    Ok(Command::Response(DebugResponse::Variable { variable }))
+                    Ok(DebugResponse::Variable { variable })
                 }
                 None => {
                     self.set_stack_trace()?;
@@ -577,7 +469,7 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
         }
     }
 
-    fn variables_command(&mut self) -> Result<Command> {
+    fn variables_command(&mut self) -> Result<DebugResponse> {
         let mut core = self.session.core(0)?;
         let status = core.status()?;
         drop(core);
@@ -590,9 +482,9 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
                         _ => stack_trace[0].variables.clone(),
                     };
 
-                    Ok(Command::Response(DebugResponse::Variables {
+                    Ok(DebugResponse::Variables {
                         variables: variables,
-                    }))
+                    })
                 }
                 None => {
                     self.set_stack_trace()?;
@@ -604,11 +496,11 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
         }
     }
 
-    fn stack_trace_command(&mut self) -> Result<Command> {
+    fn stack_trace_command(&mut self) -> Result<DebugResponse> {
         match &self.stack_trace {
-            Some(stack_trace) => Ok(Command::Response(DebugResponse::StackTrace {
+            Some(stack_trace) => Ok(DebugResponse::StackTrace {
                 stack_trace: stack_trace.clone(),
-            })),
+            }),
             None => {
                 self.set_stack_trace()?;
                 self.set_stack_frames()?;
@@ -617,18 +509,18 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
         }
     }
 
-    fn read_command(&mut self, address: u32, byte_size: usize) -> Result<Command> {
+    fn read_command(&mut self, address: u32, byte_size: usize) -> Result<DebugResponse> {
         let mut core = self.session.core(0)?;
         let mut buff: Vec<u8> = vec![0; byte_size];
         core.read_8(address, &mut buff)?;
 
-        Ok(Command::Response(DebugResponse::Read {
+        Ok(DebugResponse::Read {
             address: address,
             value: buff,
-        }))
+        })
     }
 
-    fn reset_command(&mut self, reset_and_halt: bool) -> Result<Command> {
+    fn reset_command(&mut self, reset_and_halt: bool) -> Result<DebugResponse> {
         if reset_and_halt {
             self.clear_temporaries();
 
@@ -644,10 +536,10 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
 
         self.running = true;
 
-        Ok(Command::Response(DebugResponse::Reset))
+        Ok(DebugResponse::Reset)
     }
 
-    fn flash_command(&mut self, reset_and_halt: bool) -> Result<Command> {
+    fn flash_command(&mut self, reset_and_halt: bool) -> Result<DebugResponse> {
         download_file(&mut self.session, &self.file_path, Format::Elf)
             .context("Failed to flash target")?;
 
@@ -666,10 +558,10 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
 
         self.running = true;
 
-        Ok(Command::Response(DebugResponse::Flash))
+        Ok(DebugResponse::Flash)
     }
 
-    fn halt_command(&mut self) -> Result<Command> {
+    fn halt_command(&mut self) -> Result<DebugResponse> {
         let mut core = self.session.core(0)?;
         let status = core.status()?;
 
@@ -681,10 +573,10 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
             info!("Core halted at pc = 0x{:08x}", cpu_info.pc);
         };
 
-        Ok(Command::Response(DebugResponse::Halt))
+        Ok(DebugResponse::Halt)
     }
 
-    fn status_command(&mut self) -> Result<Command> {
+    fn status_command(&mut self) -> Result<DebugResponse> {
         let mut core = self.session.core(0)?;
         let status = core.status()?;
         let mut pc = None;
@@ -693,13 +585,13 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
             pc = Some(core.read_core_reg(core.registers().program_counter())?);
         }
 
-        Ok(Command::Response(DebugResponse::Status {
+        Ok(DebugResponse::Status {
             status: status,
             pc: pc,
-        }))
+        })
     }
 
-    fn step_command(&mut self) -> Result<Command> {
+    fn step_command(&mut self) -> Result<DebugResponse> {
         let mut core = self.session.core(0)?;
         let status = core.status()?;
 
@@ -711,15 +603,15 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
             drop(core);
 
             self.clear_temporaries();
-            return Ok(Command::Response(DebugResponse::Step));
+            return Ok(DebugResponse::Step);
         }
 
-        Ok(Command::Response(DebugResponse::Error {
+        Ok(DebugResponse::Error {
             message: "Can only step when core is halted".to_owned(),
-        }))
+        })
     }
 
-    fn continue_command(&mut self) -> Result<Command> {
+    fn continue_command(&mut self) -> Result<DebugResponse> {
         let mut core = self.session.core(0)?;
         let mut status = core.status()?;
 
@@ -736,7 +628,7 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
 
         info!("Core status: {:?}", status);
 
-        Ok(Command::Response(DebugResponse::Continue))
+        Ok(DebugResponse::Continue)
     }
 
     fn set_breakpoints_command(
@@ -744,7 +636,7 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
         source_file: String,
         source_breakpoints: Vec<SourceBreakpoint>,
         source: Option<debugserver_types::Source>,
-    ) -> Result<Command> {
+    ) -> Result<DebugResponse> {
         // Clear all existing breakpoints
         let mut core = self.session.core(0)?;
         core.clear_all_hw_breakpoints()?;
@@ -753,7 +645,7 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
         let mut breakpoints = vec![];
         for bkpt in source_breakpoints {
             let breakpoint = match find_breakpoint_location(
-                self.debug_info.dwarf,
+                &self.debug_info.dwarf,
                 &self.cwd,
                 &source_file,
                 match NonZeroU64::new(bkpt.line as u64) {
@@ -802,16 +694,14 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
             breakpoints.push(breakpoint);
         }
 
-        Ok(Command::Response(DebugResponse::SetBreakpoints {
-            breakpoints,
-        }))
+        Ok(DebugResponse::SetBreakpoints { breakpoints })
     }
 
-    fn dap_stack_frames(&mut self) -> Result<Command> {
+    fn dap_stack_frames(&mut self) -> Result<DebugResponse> {
         match &self.stack_frames {
-            Some(stack_frames) => Ok(Command::Response(DebugResponse::DAPStackFrames {
+            Some(stack_frames) => Ok(DebugResponse::DAPStackFrames {
                 stack_frames: stack_frames.clone(),
-            })),
+            }),
             None => {
                 self.set_stack_trace()?;
                 self.set_stack_frames()?;
@@ -820,9 +710,9 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
         }
     }
 
-    fn dap_scopes(&mut self, frame_id: i64) -> Result<Command> {
+    fn dap_scopes(&mut self, frame_id: i64) -> Result<DebugResponse> {
         match &self.scopes {
-            Some(scopes) => Ok(Command::Response(DebugResponse::DAPScopes {
+            Some(scopes) => Ok(DebugResponse::DAPScopes {
                 scopes: match scopes.get(&frame_id) {
                     Some(val) => val,
                     None => {
@@ -831,7 +721,7 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
                     }
                 }
                 .clone(),
-            })),
+            }),
             None => {
                 self.set_stack_trace()?;
                 self.set_stack_frames()?;
@@ -840,9 +730,9 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
         }
     }
 
-    fn dap_variables(&mut self, vars_id: i64) -> Result<Command> {
+    fn dap_variables(&mut self, vars_id: i64) -> Result<DebugResponse> {
         match &self.variables {
-            Some(variables) => Ok(Command::Response(DebugResponse::DAPVariables {
+            Some(variables) => Ok(DebugResponse::DAPVariables {
                 variables: match variables.get(&vars_id) {
                     Some(val) => val.clone(),
                     None => {
@@ -850,7 +740,7 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
                         return Err(anyhow!("Missing variables"));
                     }
                 },
-            })),
+            }),
             None => {
                 self.set_stack_trace()?;
                 self.set_stack_frames()?;
@@ -880,15 +770,21 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
         let core = self.session.core(0)?;
         let mut my_core = MyCore { core };
 
+        log::debug!("start stack trace");
+
         read_and_add_registers(&mut my_core.core, &mut self.registers)?;
+        log::debug!("read registers");
+
         let stack_trace = rust_debug::call_stack::stack_trace(
-            self.debug_info.dwarf,
-            self.debug_info.debug_frame,
+            &self.debug_info.dwarf,
+            &self.debug_info.debug_frame,
             self.registers.clone(),
             &mut my_core,
             &self.cwd,
-        )?;
-        self.stack_trace = Some(resolve_stack_trace(stack_trace)?);
+        )
+        .unwrap();
+        log::debug!("stack trace done");
+        self.stack_trace = Some(resolve_stack_trace(stack_trace, &mut my_core.core)?);
 
         Ok(())
     }
@@ -902,7 +798,7 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
 
         for s in self.stack_trace.as_ref().unwrap() {
             let source_info = SourceInformation::get_from_address(
-                self.debug_info.dwarf,
+                &self.debug_info.dwarf,
                 s.call_frame.code_location as u64,
                 &self.cwd,
             )?;
@@ -1002,7 +898,7 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
 
             // Crate and add StackFrame object
             stack_frames.push(debugserver_types::StackFrame {
-                id: id,
+                id,
                 name: s.name.clone(),
                 source: Some(source),
                 line: match source_info.line {
@@ -1030,7 +926,7 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
     }
 
     // A simple example of a custom command
-    fn cycle_counter_command(&mut self) -> Result<Command> {
+    fn cycle_counter_command(&mut self) -> Result<DebugResponse> {
         let mut core = self.session.core(0)?;
         let (pc_val, cycle_counter) = read_cycle_counter(&mut core)?;
         println!("pc: {:#010x}, cycle counter: {}", pc_val, cycle_counter);
@@ -1039,7 +935,7 @@ impl<'a, R: Reader<Offset = usize>> Debugger<'a, R> {
     }
 
     // A more advanced stateful command
-    fn trace_command(&mut self) -> Result<Command> {
+    fn trace_command(&mut self) -> Result<DebugResponse> {
         self.trace = true;
         self.continue_command()
     }
@@ -1166,15 +1062,15 @@ fn read_and_add_registers(core: &mut probe_rs::Core, registers: &mut Registers) 
     Ok(())
 }
 
-#[derive(Debug, Clone)]
-pub struct DebugInformation<'a, R: Reader<Offset = usize>> {
-    pub dwarf: &'a Dwarf<R>,
-    pub debug_frame: &'a DebugFrame<R>,
+#[derive(Debug)]
+pub struct DebugInformation<R: Reader<Offset = usize>> {
+    pub dwarf: Dwarf<R>,
+    pub debug_frame: DebugFrame<R>,
     pub breakpoints: Vec<u32>,
 }
 
-impl<'a, R: Reader<Offset = usize>> DebugInformation<'a, R> {
-    pub fn new(dwarf: &'a Dwarf<R>, debug_frame: &'a DebugFrame<R>) -> DebugInformation<'a, R> {
+impl<R: Reader<Offset = usize>> DebugInformation<R> {
+    pub fn new(dwarf: Dwarf<R>, debug_frame: DebugFrame<R>) -> DebugInformation<R> {
         DebugInformation {
             dwarf,
             debug_frame,
@@ -1231,8 +1127,17 @@ impl Variable {
 
     pub fn resolve_varialbe<R: Reader<Offset = usize>>(
         var: &rust_debug::variable::Variable<R>,
+        core: &mut probe_rs::Core,
     ) -> Result<Variable> {
         //        println!("raw_var: {:#?}\n\n", var);
+        //match var.name.clone() {
+        //    Some(v) => {
+        //        if v == "test_str" {
+        //            println!("test_u32: {:#?}", var);
+        //        }
+        //    },
+        //    _=>(),
+        //};
         let mut variable = Variable {
             id: 0,
             name: var.name.clone(),
@@ -1243,7 +1148,7 @@ impl Variable {
             children: vec![],
         };
 
-        variable.evaluate(&var.value, &var.source)?;
+        variable.evaluate(&var.value, &var.source, core)?;
 
         //println!("p_variable: {:#?}\n\n", variable);
 
@@ -1254,6 +1159,7 @@ impl Variable {
         &mut self,
         value: &EvaluatorValue<R>,
         source: &Option<SourceInformation>,
+        core: &mut probe_rs::Core,
     ) -> Result<()> {
         match value {
             EvaluatorValue::Value(val, _) => {
@@ -1265,7 +1171,7 @@ impl Variable {
                     Some(name) => self.type_ = format!("{}::{}", self.type_, name),
                     None => (),
                 };
-                self.evaluate(&pointer_type.value, source)?;
+                self.evaluate(&pointer_type.value, source, core)?;
             }
             EvaluatorValue::VariantValue(variant_value) => {
                 let name = match variant_value.discr_value {
@@ -1287,13 +1193,18 @@ impl Variable {
                 variable.evaluate(
                     &EvaluatorValue::Member(Box::new(variant_value.child.clone())),
                     source,
+                    core,
                 )?;
                 self.children.push(variable);
             }
             EvaluatorValue::VariantPartValue(variant_part) => {
                 match &variant_part.variant {
                     Some(variant) => {
-                        self.evaluate(&EvaluatorValue::Member(Box::new(variant.clone())), source)?;
+                        self.evaluate(
+                            &EvaluatorValue::Member(Box::new(variant.clone())),
+                            source,
+                            core,
+                        )?;
                         let mut child = self.children.pop().ok_or(anyhow!("Error"))?;
                         match &child.name {
                             Some(_) => (),
@@ -1317,6 +1228,7 @@ impl Variable {
                     self.evaluate(
                         &EvaluatorValue::VariantValue(Box::new(variant_value.clone())),
                         source,
+                        core,
                     )?;
                 }
             }
@@ -1349,6 +1261,7 @@ impl Variable {
                                 variable.evaluate(
                                     &EvaluatorValue::<R>::Value(base_type_value, loc),
                                     source,
+                                    core,
                                 )?;
                                 self.children.push(variable);
                             }
@@ -1377,6 +1290,7 @@ impl Variable {
                         array_type_value.subrange_type_value.clone(),
                     ),
                     source,
+                    core,
                 )?;
                 for i in 0..array_type_value.values.len() {
                     let mut variable = Variable {
@@ -1388,18 +1302,75 @@ impl Variable {
                         kind: VariableKind::Indexed,
                         children: vec![],
                     };
-                    variable.evaluate(&array_type_value.values[i], source)?;
+                    variable.evaluate(&array_type_value.values[i], source, core)?;
                     self.children.push(variable);
                 }
             }
             EvaluatorValue::Struct(structure_type_value) => {
                 //self.name = Some(structure_type_value.name.clone());
+
                 self.kind = VariableKind::Named;
                 self.type_ = format!("{}::{}", self.type_, structure_type_value.name.clone());
-                self.value = structure_type_value.name.clone();
 
-                for member in &structure_type_value.members {
-                    self.evaluate(member, source)?;
+                let name = structure_type_value.name.clone();
+                if name.contains("str") || name.contains("String") {
+                    // TODO: Redesign how string are evaluated
+
+                    let mut num_bytes = 0;
+                    let mut address = 0;
+                    for member in &structure_type_value.members {
+                        match member {
+                            EvaluatorValue::Member(m) => {
+                                match m.value.clone() {
+                                    EvaluatorValue::PointerTypeValue(ptv) => {
+                                        match ptv.address.clone() {
+                                            EvaluatorValue::Value(v, _) => {
+                                                address = match v {
+                                                    BaseTypeValue::Address32(a) => a,
+                                                    //BaseTypeValue::Generic(a) => a as u32,
+                                                    BaseTypeValue::U8(a) => a as u32,
+                                                    BaseTypeValue::U16(a) => a as u32,
+                                                    BaseTypeValue::U32(a) => a,
+                                                    //BaseTypeValue::U64(a) => a as u32,
+                                                    _ => unimplemented!(),
+                                                };
+                                            }
+                                            _ => panic!("ptv.value: {:#?}", ptv.value),
+                                        };
+                                    }
+                                    EvaluatorValue::Value(v, _) => {
+                                        num_bytes = match v {
+                                            BaseTypeValue::Address32(a) => a as usize,
+                                            BaseTypeValue::Generic(a) => a as usize,
+                                            BaseTypeValue::U8(a) => a as usize,
+                                            BaseTypeValue::U16(a) => a as usize,
+                                            BaseTypeValue::U32(a) => a as usize,
+                                            BaseTypeValue::U64(a) => a as usize,
+                                            _ => unimplemented!(),
+                                        };
+                                    }
+                                    _ => panic!("m: {:#?}", m.value),
+                                };
+                            }
+                            _ => unreachable!(),
+                        };
+                    }
+                    let mut raw_string = vec![0u8; num_bytes];
+                    core.read_8(address, &mut raw_string)?;
+                    match str::from_utf8(raw_string.as_ref()) {
+                        Ok(v) => self.value = format!("{:?}", v),
+                        Err(_err) => {
+                            self.value = structure_type_value.name.clone();
+                            for member in &structure_type_value.members {
+                                self.evaluate(member, source, core)?;
+                            }
+                        }
+                    };
+                } else {
+                    self.value = structure_type_value.name.clone();
+                    for member in &structure_type_value.members {
+                        self.evaluate(member, source, core)?;
+                    }
                 }
             }
             EvaluatorValue::Enum(enumeration_type_value) => {
@@ -1430,7 +1401,7 @@ impl Variable {
                 self.kind = VariableKind::Named;
                 self.type_ = format!("{}::{}", self.type_, union_type_value.name);
                 for member in &union_type_value.members {
-                    self.evaluate(member, source)?;
+                    self.evaluate(member, source, core)?;
                 }
             }
             EvaluatorValue::Member(member_value) => {
@@ -1466,7 +1437,7 @@ impl Variable {
                     kind,
                     children: vec![],
                 };
-                variable.evaluate(&member_value.value, source)?;
+                variable.evaluate(&member_value.value, source, core)?;
                 self.children.push(variable);
             }
             EvaluatorValue::OptimizedOut => self.value = "< OptimizedOut >".to_string(),
@@ -1490,20 +1461,21 @@ pub struct StackFrame {
 impl StackFrame {
     pub fn resolve_stackframe<R: Reader<Offset = usize>>(
         frame: &rust_debug::call_stack::StackFrame<R>,
+        core: &mut probe_rs::Core,
     ) -> Result<StackFrame> {
         let mut variables = vec![];
         for var in &frame.variables {
-            variables.push(Variable::resolve_varialbe(var)?);
+            variables.push(Variable::resolve_varialbe(var, core)?);
         }
 
         let mut arguments = vec![];
         for var in &frame.arguments {
-            arguments.push(Variable::resolve_varialbe(var)?);
+            arguments.push(Variable::resolve_varialbe(var, core)?);
         }
 
         let mut registers = vec![];
         for var in &frame.registers {
-            registers.push(Variable::resolve_varialbe(var)?);
+            registers.push(Variable::resolve_varialbe(var, core)?);
         }
 
         Ok(StackFrame {
@@ -1533,10 +1505,11 @@ impl StackFrame {
 
 pub fn resolve_stack_trace<R: Reader<Offset = usize>>(
     stack_frames: Vec<rust_debug::call_stack::StackFrame<R>>,
+    core: &mut probe_rs::Core,
 ) -> Result<Vec<StackFrame>> {
     let mut stack_trace = vec![];
     for sf in &stack_frames {
-        stack_trace.push(StackFrame::resolve_stackframe(sf)?);
+        stack_trace.push(StackFrame::resolve_stackframe(sf, core)?);
     }
     Ok(stack_trace)
 }
