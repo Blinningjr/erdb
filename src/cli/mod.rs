@@ -1,3 +1,6 @@
+mod cli_commands;
+use cli_commands::erdb_command;
+
 use async_std::io;
 
 use super::commands::{
@@ -11,20 +14,41 @@ use debugserver_types::Breakpoint;
 use log::error;
 use probe_rs::CoreStatus;
 
-pub async fn handle_input(stdin: &io::Stdin, cmd_parser: &Commands) -> Result<DebugRequest> {
+
+pub async fn handle_input(stdin: &io::Stdin, cmd_parser: &Commands) -> Result<()> { //Result<DebugRequest> {
     loop {
         // Read next line asynchronously
-        let mut line = String::new();
-        stdin.read_line(&mut line).await?;
+        //let mut line = String::new();
+        //stdin.read_line(&mut line).await?;
 
-        let request = match cmd_parser.parse_command(line.as_ref()) {
-            Ok(cmd) => cmd,
+        //let request = match cmd_parser.parse_command(line.as_ref()) {
+        //    Ok(cmd) => cmd,
+        //    Err(err) => {
+        //        println!("Error: {:?}", err); // TODO: log
+        //        continue;
+        //    }
+        //};
+        //return Ok(request);
+    
+        let mut line = "ERDB".to_owned();
+        stdin.read_line(&mut line).await?;
+        line.pop(); // Remove '\n' from end of the line.
+        let split_line = shellwords::split(&line)?;
+        println!("split_line: {:#?}", split_line);
+        let m = erdb_command()
+            .try_get_matches_from(split_line);
+        match m {
+            Ok(val) => {
+                println!("M: {:#?}", val);
+                println!("sc: {:#?}", val.subcommand());
+            },
             Err(err) => {
-                println!("Error: {:?}", err); // TODO: log
-                continue;
-            }
+                println!("kind: {:#?}", err.kind());
+                err.print();
+            },//println!("e M: {:#?}", err.print),
+
         };
-        return Ok(request);
+        
     }
 }
 

@@ -31,3 +31,7 @@ rustyline-async = "0.2"
 
 #rust-debug = { path = "/home/niklas/exjobb/rust-debug" }  
 rust-debug = { git = "https://github.com/Blinningjr/rust-debug.git" }
+
+
+clap = { version = "3.2.21", features = ["derive", "cargo"] }
+shellwords = "1.0.0"
