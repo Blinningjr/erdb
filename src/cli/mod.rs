@@ -30,7 +30,7 @@ pub async fn handle_input(stdin: &io::Stdin, cmd_parser: &Commands) -> Result<()
         //};
         //return Ok(request);
     
-        let mut line = "ERDB".to_owned();
+        let mut line = "ERDB ".to_owned();
         stdin.read_line(&mut line).await?;
         line.pop(); // Remove '\n' from end of the line.
         let split_line = shellwords::split(&line)?;
