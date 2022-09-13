@@ -48,7 +48,7 @@ pub fn handle_response(stdout: &mut io::Stdout, response: Result<DebugResponse>)
     match response {
         Ok(val) => match_debug_response(stdout, val),
         Err(err) => {
-            println!("ERDB Error: {}", err);
+            println!("Error: {}", err);
             Ok(false)
         },
     }
@@ -101,7 +101,6 @@ fn match_debug_response(_stdout: &mut io::Stdout, response: DebugResponse) -> Re
 
     Ok(false)
 }
-
 
 pub fn handle_event(event: &DebugEvent) {
     println!("{:?}", event);
