@@ -151,11 +151,22 @@ pub fn config_commands() -> Command<'static> {
         .subcommands(config_subcommands())
 }
 
+pub fn cycles_command() -> Command<'static> {
+    Command::new("cycles")
+        .about("Print the value of the cycle counter")
+        .alias("c")
+}
 
 pub fn disassemble_command() -> Command<'static> {
     Command::new("disassemble")
         .about("Disassemble the nearest code")
         .alias("d")
+}
+
+pub fn trace_command() -> Command<'static> {
+    Command::new("trace")
+        .about("Trace cycle counter at breakpoint instructions until `bkpt_end` is reached")
+        .alias("t")
 }
 
 pub fn registers_command() -> Command<'static> {
@@ -202,9 +213,11 @@ pub fn variables_command() -> Command<'static> {
 }
 
 
-pub fn info_subcommands() -> [Command<'static>; 8] {
+pub fn info_subcommands() -> [Command<'static>; 10] {
     [
+        cycles_command(),
         disassemble_command(),
+        trace_command(),
         read_command(), 
         registers_command(),
         stack_command(),
