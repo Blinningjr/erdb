@@ -1,5 +1,5 @@
 mod cli_commands;
-use cli_commands::parse_string_to_erdb_request;
+use cli_commands::{parse_string_simple_cli, parse_string_to_erdb_request};
 
 use async_std::io;
 
@@ -25,19 +25,10 @@ pub async fn handle_input(stdin: &io::Stdin) -> Result<DebugRequest> {
 }
 
 pub async fn simple_handle_input(stdin: &io::Stdin) -> Result<bool> {
-    loop {
-        // Read next line asynchronously
-        let mut line = String::new();
-        stdin.read_line(&mut line).await?;
-
-        return Ok(match line.as_str() {
-            "q\n" => true,
-            "quit\n" => true,
-            "e\n" => true,
-            "exit\n" => true,
-            _ => false,
-        });
-    }
+    // Read next line asynchronously
+    let mut line = "ERDB ".to_owned();
+    stdin.read_line(&mut line).await?;
+    parse_string_simple_cli(line)
 }
 
 pub fn handle_response(stdout: &mut io::Stdout, response: Result<DebugResponse>) -> Result<bool> {

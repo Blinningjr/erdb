@@ -418,3 +418,21 @@ pub fn parse_string_to_erdb_request(line: String) -> Result<Option<DebugRequest>
         }
     }
 }
+
+pub fn parse_string_simple_cli(line: String) -> Result<bool> {
+    let split_line = shellwords::split(&line)?;
+
+    match command!("ERDB")
+        .author("Blinningjr")
+        .about("Embedded Rust Debugger")
+        .subcommand(exit_command())
+        .arg_required_else_help(true)
+        .try_get_matches_from(split_line)
+    {
+        Ok(_val) => Ok(true),
+        Err(err) => {
+            let _a = err.print();
+            Ok(false)
+        }
+    }
+}
