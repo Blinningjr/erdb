@@ -167,8 +167,8 @@ async fn cli_mode(opt: Opt) -> Result<()> {
                 if cli::handle_response(&mut stdout, response)? {
                     break;
                 }
-                   
-                
+
+
 
                 // Restart the task
                 if cli_task.is_terminated() {

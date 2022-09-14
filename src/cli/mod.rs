@@ -4,8 +4,7 @@ use cli_commands::parse_string_to_erdb_request;
 use async_std::io;
 
 use super::commands::{
-    debug_event::DebugEvent, debug_request::DebugRequest,
-    debug_response::DebugResponse,
+    debug_event::DebugEvent, debug_request::DebugRequest, debug_response::DebugResponse,
 };
 use crate::debugger::StackFrame;
 use crate::debugger::Variable;
@@ -14,9 +13,8 @@ use debugserver_types::Breakpoint;
 use log::error;
 use probe_rs::CoreStatus;
 
-
 pub async fn handle_input(stdin: &io::Stdin) -> Result<DebugRequest> {
-    loop { 
+    loop {
         let mut line = "ERDB ".to_owned();
         stdin.read_line(&mut line).await?;
         match parse_string_to_erdb_request(line)? {
@@ -48,7 +46,7 @@ pub fn handle_response(stdout: &mut io::Stdout, response: Result<DebugResponse>)
         Err(err) => {
             println!("Error: {}", err);
             Ok(false)
-        },
+        }
     }
 }
 

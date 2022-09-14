@@ -177,7 +177,6 @@ impl<R: Reader<Offset = usize>> DebugSession<R> {
         })
     }
 
-
     pub fn handle_request(&mut self, request: DebugRequest) -> Result<DebugResponse> {
         match request {
             DebugRequest::Attach {
