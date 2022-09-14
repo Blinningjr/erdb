@@ -393,6 +393,9 @@ fn get_command(matches: ArgMatches) -> Result<DebugRequest> {
                 },
                 (HALT_SUB_CMD, _sub_cmd) => DebugRequest::Halt,
                 (REGISTERS_SUB_CMD, _sub_cmd) => DebugRequest::Registers,
+                (RESET_SUB_CMD, sub_cmd) => DebugRequest::Reset { 
+                    reset_and_halt: *sub_cmd.get_one::<bool>("reset_and_halt").unwrap(),
+                },
                 (STEP_SUB_CMD, _sub_cmd) => DebugRequest::Step,
                 _ => unreachable!(),
             }

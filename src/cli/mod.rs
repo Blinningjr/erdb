@@ -4,7 +4,7 @@ use cli_commands::parse_string_to_erdb_request;
 use async_std::io;
 
 use super::commands::{
-    commands::Commands, debug_event::DebugEvent, debug_request::DebugRequest,
+    debug_event::DebugEvent, debug_request::DebugRequest,
     debug_response::DebugResponse,
 };
 use crate::debugger::StackFrame;
@@ -15,7 +15,7 @@ use log::error;
 use probe_rs::CoreStatus;
 
 
-pub async fn handle_input(stdin: &io::Stdin, _cmd_parser: &Commands) -> Result<DebugRequest> {
+pub async fn handle_input(stdin: &io::Stdin) -> Result<DebugRequest> {
     loop { 
         let mut line = "ERDB ".to_owned();
         stdin.read_line(&mut line).await?;

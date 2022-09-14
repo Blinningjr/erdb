@@ -3,16 +3,6 @@ mod commands;
 mod debug_adapter;
 mod debugger;
 
-//use object::File;
-//use gimli::EndianReader;
-
-use commands::{
-    //debug_response::DebugResponse,
-    //debug_event::DebugEvent,
-    commands::Commands,
-    debug_request::DebugRequest,
-};
-
 use debug_adapter::DebugAdapter;
 
 use log::info;
@@ -157,36 +147,32 @@ async fn cli_mode(opt: Opt) -> Result<()> {
     // Setup needed variables
     let stdin = io::stdin();
     let mut stdout = io::stdout();
-    let commands = Commands::new();
     let sleep_duration = 100;
 
     let mut debug_handler = debugger::NewDebugHandler::new(opt, load_loader);
 
     // Create the tasks
-    let cli_task = cli::handle_input(&stdin, &commands).fuse();
+    let cli_task = cli::handle_input(&stdin).fuse();
     let heartbeat_task = task::sleep(Duration::from_millis(sleep_duration)).fuse();
     pin_mut!(cli_task, heartbeat_task);
 
     // Event loop
     loop {
         select! {
-            c = cli_task => {
-                match c? {
-                    DebugRequest::Help { description } => println!("{}", description),
-                    request => {
-                        // Execute request
-                        let response = debug_handler.handle_request(request);
+            request = cli_task => {
+                // Execute request
+                let response = debug_handler.handle_request(request?);
 
-                        // Print response to user and exit if requested
-                        if cli::handle_response(&mut stdout, response)? {
-                            break;
-                        }
-                    },
-                };
+                // Print response to user and exit if requested
+                if cli::handle_response(&mut stdout, response)? {
+                    break;
+                }
+                   
+                
 
                 // Restart the task
                 if cli_task.is_terminated() {
-                    cli_task.set(cli::handle_input(&stdin, &commands).fuse())
+                    cli_task.set(cli::handle_input(&stdin).fuse())
                 }
             },
             () = heartbeat_task => {
