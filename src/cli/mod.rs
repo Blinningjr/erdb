@@ -1,8 +1,10 @@
+mod cli_commands;
+use cli_commands::{parse_string_simple_cli, parse_string_to_erdb_request};
+
 use async_std::io;
 
 use super::commands::{
-    commands::Commands, debug_event::DebugEvent, debug_request::DebugRequest,
-    debug_response::DebugResponse,
+    debug_event::DebugEvent, debug_request::DebugRequest, debug_response::DebugResponse,
 };
 use crate::debugger::StackFrame;
 use crate::debugger::Variable;
@@ -11,37 +13,22 @@ use debugserver_types::Breakpoint;
 use log::error;
 use probe_rs::CoreStatus;
 
-pub async fn handle_input(stdin: &io::Stdin, cmd_parser: &Commands) -> Result<DebugRequest> {
+pub async fn handle_input(stdin: &io::Stdin) -> Result<DebugRequest> {
     loop {
-        // Read next line asynchronously
-        let mut line = String::new();
+        let mut line = "ERDB ".to_owned();
         stdin.read_line(&mut line).await?;
-
-        let request = match cmd_parser.parse_command(line.as_ref()) {
-            Ok(cmd) => cmd,
-            Err(err) => {
-                println!("Error: {:?}", err); // TODO: log
-                continue;
-            }
-        };
-        return Ok(request);
+        match parse_string_to_erdb_request(line)? {
+            Some(val) => return Ok(val),
+            None => continue,
+        }
     }
 }
 
 pub async fn simple_handle_input(stdin: &io::Stdin) -> Result<bool> {
-    loop {
-        // Read next line asynchronously
-        let mut line = String::new();
-        stdin.read_line(&mut line).await?;
-
-        return Ok(match line.as_str() {
-            "q\n" => true,
-            "quit\n" => true,
-            "e\n" => true,
-            "exit\n" => true,
-            _ => false,
-        });
-    }
+    // Read next line asynchronously
+    let mut line = "ERDB ".to_owned();
+    stdin.read_line(&mut line).await?;
+    parse_string_simple_cli(line)
 }
 
 pub fn handle_response(stdout: &mut io::Stdout, response: Result<DebugResponse>) -> Result<bool> {
@@ -50,7 +37,7 @@ pub fn handle_response(stdout: &mut io::Stdout, response: Result<DebugResponse>)
         Err(err) => {
             println!("Error: {}", err);
             Ok(false)
-        },
+        }
     }
 }
 
