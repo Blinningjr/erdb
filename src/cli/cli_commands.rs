@@ -41,23 +41,23 @@ fn set_breakpoint_command() -> Command<'static> {
         .about("Set breakpoint")
         .alias("b")
         .arg(
-            arg!([address] "Address")
+            arg!([num] "Address or line number if file is given")
                 .required(true)
                 .value_parser(value_parser!(u32)),
         )
-        .arg(arg!([file] "File path").value_parser(value_parser!(String))) // TODO: Set as pathbuf
+        .arg(arg!([file] "Source code file path").value_parser(value_parser!(String))) // TODO: Set as pathbuf
 }
 
 fn clear_breakpoint_command() -> Command<'static> {
     Command::new(CLEAR_SUB_CMD)
-        .about("Clear a  breakpoint")
+        .about("Clear breakpoint")
         .alias("c")
         .arg_required_else_help(true)
 }
 
 fn clear_breakpoints_command() -> Command<'static> {
     Command::new(CLEAR_ALL_SUB_CMD)
-        .about("Clear all breakpoint")
+        .about("Clear all breakpoints")
         .alias("ca")
 }
 
@@ -79,19 +79,21 @@ fn breakpoint_commands() -> Command<'static> {
 
 fn attach_command() -> Command<'static> {
     Command::new(ATTACH_SUB_CMD)
-        .about("Attach to target")
+        .about("Attach debugger to target")
         .alias("a")
         .arg(
             Arg::new("reset")
                 .short('r')
                 .long("reset")
-                .action(ArgAction::SetTrue),
+                .action(ArgAction::SetTrue)
+                .help("Reset target"),
         )
         .arg(
             Arg::new("reset_and_halt")
                 .short('s')
                 .long("reset-and-halt")
-                .action(ArgAction::SetTrue),
+                .action(ArgAction::SetTrue)
+                .help("Reset and halt target"),
         )
 }
 
@@ -109,7 +111,8 @@ fn flash_command() -> Command<'static> {
             Arg::new("reset_and_halt")
                 .short('s')
                 .long("reset-and-halt")
-                .action(ArgAction::SetTrue),
+                .action(ArgAction::SetTrue)
+                .help("Reset and halt target"),
         )
 }
 
@@ -121,13 +124,14 @@ fn halt_command() -> Command<'static> {
 
 fn reset_command() -> Command<'static> {
     Command::new(RESET_SUB_CMD)
-        .about("Reset the program")
+        .about("Reset target")
         .alias("r")
         .arg(
             Arg::new("reset_and_halt")
                 .short('s')
                 .long("reset-and-halt")
-                .action(ArgAction::SetTrue),
+                .action(ArgAction::SetTrue)
+                .help("Reset and halt target"),
         )
 }
 
@@ -180,7 +184,7 @@ fn chip_command() -> Command<'static> {
 
 fn probe_command() -> Command<'static> {
     Command::new(PROBE_SUB_CMD)
-        .about("Set probe id to use")
+        .about("Set probe to debug with")
         .alias("c")
         .arg(
             arg!([num] "Probe number")
@@ -192,7 +196,7 @@ fn probe_command() -> Command<'static> {
 
 fn work_directory_command() -> Command<'static> {
     Command::new(WORK_DIR_SUB_CMD)
-        .about("Set program work directory")
+        .about("Specify source code work directory")
         .alias("wd")
         .arg_required_else_help(true)
         .arg(arg!([dir] "Work directory path").value_parser(value_parser!(String)))
@@ -224,7 +228,7 @@ fn cycles_command() -> Command<'static> {
 
 fn disassemble_command() -> Command<'static> {
     Command::new(DISASSEMBLE_SUB_CMD)
-        .about("Disassemble the nearest code")
+        .about("Disassemble code at current location")
         .alias("d")
 }
 
@@ -236,13 +240,13 @@ fn trace_command() -> Command<'static> {
 
 fn registers_command() -> Command<'static> {
     Command::new(REGISTERS_SUB_CMD)
-        .about("Show all the register")
+        .about("Print registers")
         .alias("r")
 }
 
 fn read_command() -> Command<'static> {
     Command::new(READ_SUB_CMD)
-        .about("Read bytes from memory address")
+        .about("Read bytes from a memory address")
         .alias("r")
         .arg(
             arg!([address] "Memory address")
@@ -258,18 +262,18 @@ fn read_command() -> Command<'static> {
 
 fn stack_command() -> Command<'static> {
     Command::new(STACK_SUB_CMD)
-        .about("Show stack frame")
+        .about("Print stack")
         .alias("s")
 }
 
 fn stack_trace_command() -> Command<'static> {
     Command::new(STACK_TRACE_SUB_CMD)
-        .about("Show stack trace")
+        .about("Print stack trace")
         .alias("st")
 }
 
 fn status_command() -> Command<'static> {
-    Command::new(STATUS_SUB_CMD).about("Show MCU status")
+    Command::new(STATUS_SUB_CMD).about("Print target status")
 }
 
 fn variable_command() -> Command<'static> {
@@ -285,8 +289,8 @@ fn variable_command() -> Command<'static> {
 
 fn variables_command() -> Command<'static> {
     Command::new(VARIABLES_SUB_CMD)
-        .about("Show all local variables")
-        .alias("var")
+        .about("Print all variables in scope")
+        .alias("vars")
 }
 
 fn info_subcommands() -> [Command<'static>; 10] {
