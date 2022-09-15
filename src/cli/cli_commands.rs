@@ -45,7 +45,8 @@ fn set_breakpoint_command() -> Command<'static> {
                 .required(true)
                 .value_parser(value_parser!(u32)),
         )
-        .arg(arg!([file] "Source code file path").value_parser(value_parser!(String))) // TODO: Set as pathbuf
+        .arg(arg!([file] "Source code file path").value_parser(value_parser!(String)))
+    // TODO: Set as pathbuf
 }
 
 fn clear_breakpoint_command() -> Command<'static> {
@@ -261,9 +262,7 @@ fn read_command() -> Command<'static> {
 }
 
 fn stack_command() -> Command<'static> {
-    Command::new(STACK_SUB_CMD)
-        .about("Print stack")
-        .alias("s")
+    Command::new(STACK_SUB_CMD).about("Print stack").alias("s")
 }
 
 fn stack_trace_command() -> Command<'static> {
