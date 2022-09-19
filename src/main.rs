@@ -208,6 +208,7 @@ async fn server_mode(opt: Opt) -> Result<()> {
 
     // Create the tasks
     let cli_task = cli::simple_handle_input(&stdin).fuse();
+    info!("Starting debug");
     let tcp_connect_task = listner.accept().fuse();
     pin_mut!(cli_task, tcp_connect_task);
 
