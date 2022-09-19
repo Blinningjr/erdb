@@ -155,7 +155,7 @@ impl<R: Reader<Offset = usize>> DebugSession<R> {
                 probe_rs::CoreRegisterAddress::from(core.registers().stack_pointer()).0 as usize;
             (pc_reg, link_reg, sp_reg)
         };
-        let mut registers = Registers::new();
+        let mut registers = Registers::default();
         registers.program_counter_register = Some(pc_reg);
         registers.link_register = Some(link_reg);
         registers.stack_pointer_register = Some(sp_reg);
