@@ -61,7 +61,10 @@ impl<W: Write + Unpin> DebugAdapter<W> {
     ) -> Result<bool> {
         let result = match request.command.as_ref() {
             "initialize" => self.handle_init_dap_request(&request).await,
-            "launch" => self.handle_launch_dap_request(&request).await,
+            "launch" => {
+                self.handle_launch_dap_request(debug_handler, &request)
+                    .await
+            }
             "attach" => {
                 self.handle_attach_dap_request(debug_handler, &request)
                     .await
@@ -213,9 +216,53 @@ impl<W: Write + Unpin> DebugAdapter<W> {
         Ok(false)
     }
 
-    async fn handle_launch_dap_request(&mut self, _request: &Request) -> Result<bool> {
-        error!("Unimplemented");
-        Ok(false) // NOTE: return error maybe
+    async fn handle_launch_dap_request<R: Reader<Offset = usize>>(
+        &mut self,
+        debug_handler: &mut NewDebugHandler<R>,
+        request: &Request,
+    ) -> Result<bool> {
+        let args: LaunchRequestArguments = get_arguments(&request)?;
+        debug!("launch args: {:#?}", args);
+        info!("program: {:?}", args.program);
+
+        // Set binary path
+        let path = PathBuf::from(args.program);
+        let _sb_ack = debug_handler.handle_request(DebugRequest::SetBinary { path })?;
+
+        // Set chip
+        let _sc_ack = debug_handler.handle_request(DebugRequest::SetChip {
+            chip: args.chip.clone(),
+        })?;
+
+        match args.cwd {
+            Some(cwd) => {
+                // Set Current Working Directory (CWD)
+                let _cwd_ack = debug_handler.handle_request(DebugRequest::SetCWD { cwd })?;
+            }
+            None => return Err(anyhow!("Missing cwd")),
+        };
+        
+        info!("Flashing");
+        // Flash binary to target
+        let flash_ack = debug_handler.handle_request(DebugRequest::Flash {
+            reset_and_halt: args.halt_after_reset.unwrap_or(false)
+        })?;
+        info!("Done Flashing:{:?}", flash_ack);
+
+
+        let response = Response {
+            body: None,
+            command: request.command.clone(),
+            message: None,
+            request_seq: request.seq,
+            seq: request.seq,
+            success: true,
+            type_: "response".to_string(),
+        };
+
+        self.seq = send_data(&mut self.writer, &to_vec(&response)?, self.seq).await?;
+
+        Ok(false)
     }
 
     async fn handle_attach_dap_request<R: Reader<Offset = usize>>(
@@ -229,7 +276,7 @@ impl<W: Write + Unpin> DebugAdapter<W> {
 
         // Set binary path
         let path = PathBuf::from(args.program);
-        let _sb_ack = debug_handler.handle_request(DebugRequest::SetBinary { path: path })?;
+        let _sb_ack = debug_handler.handle_request(DebugRequest::SetBinary { path })?;
 
         // Set chip
         let _sc_ack = debug_handler.handle_request(DebugRequest::SetChip {
@@ -241,34 +288,14 @@ impl<W: Write + Unpin> DebugAdapter<W> {
                 // Set Current Working Directory (CWD)
                 let _cwd_ack = debug_handler.handle_request(DebugRequest::SetCWD { cwd })?;
             }
-            None => (),
+            None => return Err(anyhow!("Missing cwd")),
         };
 
-        // Flash and attach or just attach to the core
-        match args.flash {
-            Some(true) => {
-                // Flash binary to chip
-                let _flash_ack = debug_handler.handle_request(DebugRequest::Flash {
-                    reset_and_halt: match args.halt_after_reset {
-                        Some(val) => val,
-                        None => false,
-                    },
-                })?;
-            }
-            _ => {
-                // Attach to chip
-                let _attach_ack = debug_handler.handle_request(DebugRequest::Attach {
-                    reset: match args.reset {
-                        Some(val) => val,
-                        None => false,
-                    },
-                    reset_and_halt: match args.halt_after_reset {
-                        Some(val) => val,
-                        None => false,
-                    },
-                })?;
-            }
-        };
+        // Attach to target
+        let _attach_ack = debug_handler.handle_request(DebugRequest::Attach {
+            reset: args.reset.unwrap_or(false),
+            reset_and_halt: args.halt_after_reset.unwrap_or(false),
+        })?;
 
         let response = Response {
             body: None,
@@ -456,10 +483,7 @@ impl<W: Write + Unpin> DebugAdapter<W> {
             variables.push(debugserver_types::Variable {
                 evaluate_name: None, //Option<String>,
                 indexed_variables: Some(indexed_variables),
-                name: match &var.name {
-                    Some(name) => name.clone(),
-                    None => "<unknown>".to_string(),
-                },
+                name: var.name.clone().unwrap_or("<unknown>".to_string()),
                 named_variables: Some(named_variables),
                 presentation_hint: None,
                 type_: Some(var.type_.clone()),
@@ -734,21 +758,21 @@ pub struct StoppedEventBody {
 }
 
 #[derive(Deserialize, Debug, Default)]
+#[serde(rename_all = "camelCase")]
 struct AttachRequestArguments {
     program: String,
     chip: String,
     cwd: Option<String>,
     reset: Option<bool>,
     halt_after_reset: Option<bool>,
-    flash: Option<bool>,
 }
 
-//#[derive(Deserialize, Debug, Default)]
-//struct LaunchRequestArguments {
-//    program: String,
-//    chip: String,
-//    cwd: Option<String>,
-//    reset: Option<bool>,
-//    no_debug: Option<bool>,
-//    halt_after_reset: Option<bool>,
-//}
+#[derive(Deserialize, Debug, Default)]
+#[serde(rename_all = "camelCase")]
+struct LaunchRequestArguments {
+    program: String,
+    chip: String,
+    cwd: Option<String>,
+    no_debug: Option<bool>,
+    halt_after_reset: Option<bool>,
+}
