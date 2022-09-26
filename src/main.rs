@@ -231,11 +231,10 @@ async fn server_mode(opt: Opt) -> Result<()> {
                 println!("Accepted connection from {}", addr);
 
                 debug_server(opt.clone(), socket.clone(), &stdin).await?;
-                break; // TODO: Add flag that determines if the server should stop or not.
 
-                //if tcp_connect_task.is_terminated() {
-                //    tcp_connect_task.set(listner.accept().fuse());
-                //}
+                if tcp_connect_task.is_terminated() {
+                    tcp_connect_task.set(listner.accept().fuse());
+                }
             },
         }
     }
