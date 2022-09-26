@@ -241,14 +241,13 @@ impl<W: Write + Unpin> DebugAdapter<W> {
             }
             None => return Err(anyhow!("Missing cwd")),
         };
-        
+
         info!("Flashing");
         // Flash binary to target
         let flash_ack = debug_handler.handle_request(DebugRequest::Flash {
-            reset_and_halt: args.halt_after_reset.unwrap_or(false)
+            reset_and_halt: args.halt_after_reset.unwrap_or(false),
         })?;
         info!("Done Flashing:{:?}", flash_ack);
-
 
         let response = Response {
             body: None,
