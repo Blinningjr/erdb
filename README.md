@@ -16,7 +16,7 @@ It is only tested on a `STM32F411RETx` dev board.
 ## Installation
 
 ```sh
-Cargo install --path .
+cargo install --path .
 ```
 
 ## Crate rust-debug
