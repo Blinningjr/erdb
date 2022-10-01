@@ -4,7 +4,7 @@ use super::{DebugRequest, Result};
 use std::path::PathBuf;
 
 const BREAKPOINT_CMD: &str = "breakpoint";
-const BKPT_SUB_CMD: &str = "bkpt";
+const BKPT_SUB_CMD: &str = "set";
 const CLEAR_SUB_CMD: &str = "clear";
 const CLEAR_ALL_SUB_CMD: &str = "clear-all";
 
@@ -39,7 +39,7 @@ const STEP_SUB_CMD: &str = "step";
 fn set_breakpoint_command() -> Command {
     Command::new(BKPT_SUB_CMD)
         .about("Set breakpoint")
-        .alias("b")
+        .alias("s")
         .arg(
             arg!([num] "Address or line number if file is given")
                 .required(true)
@@ -73,7 +73,7 @@ fn breakpoint_subcommands() -> [Command; 3] {
 fn breakpoint_commands() -> Command {
     Command::new(BREAKPOINT_CMD)
         .about("Collection of breakpoint commands")
-        .alias("b")
+        .alias("bkpt")
         .arg_required_else_help(true)
         .subcommands(breakpoint_subcommands())
 }
@@ -156,7 +156,6 @@ fn target_subcommands() -> [Command; 6] {
 fn target_commands() -> Command {
     Command::new(TARGET_CMD)
         .about("Collection of target commands")
-        .alias("t")
         .arg_required_else_help(true)
         .subcommands(target_subcommands())
 }
@@ -186,7 +185,7 @@ fn chip_command() -> Command {
 fn probe_command() -> Command {
     Command::new(PROBE_SUB_CMD)
         .about("Set probe to debug with")
-        .alias("c")
+        .alias("p")
         .arg(
             arg!([num] "Probe number")
                 .required(true)
@@ -216,7 +215,6 @@ fn config_subcommands() -> [Command; 4] {
 fn config_commands() -> Command {
     Command::new(CONFIG_CMD)
         .about("Collection of configuration commands")
-        .alias("c")
         .arg_required_else_help(true)
         .subcommands(config_subcommands())
 }
@@ -242,7 +240,7 @@ fn trace_command() -> Command {
 fn registers_command() -> Command {
     Command::new(REGISTERS_SUB_CMD)
         .about("Print registers")
-        .alias("r")
+        .alias("regs")
 }
 
 fn read_command() -> Command {
@@ -262,7 +260,7 @@ fn read_command() -> Command {
 }
 
 fn stack_command() -> Command {
-    Command::new(STACK_SUB_CMD).about("Print stack").alias("s")
+    Command::new(STACK_SUB_CMD).about("Print stack")
 }
 
 fn stack_trace_command() -> Command {
@@ -310,13 +308,12 @@ fn info_subcommands() -> [Command; 10] {
 fn info_commands() -> Command {
     Command::new(INFO_CMD)
         .about("Collection of debug info commands")
-        .alias("i")
         .arg_required_else_help(true)
         .subcommands(info_subcommands())
 }
 
 fn exit_command() -> Command {
-    Command::new(EXIT_CMD).about("Exit the debugger").alias("e")
+    Command::new(EXIT_CMD).about("Exit the debugger")
 }
 
 fn all_erdb_commands() -> [Command; 5] {
