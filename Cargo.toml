@@ -4,6 +4,12 @@ version = "0.2.0"
 authors = ["Niklas Lundberg"]
 license = "MIT OR Apache-2.0"
 edition = "2021"
+description = "A debugger for rust on embedded systems."
+readme = "README.md"
+homepage = "https://github.com/Blinningjr/erdb"
+repository = "https://github.com/Blinningjr/erdb"
+keywords = ["debugger", "debugging", "debug"]
+categories = ["development-tools::debugging"]
 
 [dependencies]
 probe-rs = "0.12"
