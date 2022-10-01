@@ -203,7 +203,7 @@ async fn server_mode(opt: Opt) -> Result<()> {
     let stdin = io::stdin();
 
     // Setup TCP server
-    let addr = SocketAddr::from(([127, 0, 0, 1], opt.port.clone()));
+    let addr = SocketAddr::from(([127, 0, 0, 1], opt.port));
     let listner = TcpListener::bind(addr).await?;
 
     // Create the tasks
@@ -260,7 +260,7 @@ async fn debug_server(opt: Opt, socket: TcpStream, stdin: &io::Stdin) -> Result<
     let mut debug_adapter = DebugAdapter::new(writer);
 
     // Create the tasks
-    let cli_task = cli::simple_handle_input(&stdin).fuse();
+    let cli_task = cli::simple_handle_input(stdin).fuse();
     let heartbeat_task = task::sleep(Duration::from_millis(sleep_duration)).fuse();
     let msg_task = debug_adapter::read_dap_msg(BufReader::new(socket.clone())).fuse();
 
@@ -277,7 +277,7 @@ async fn debug_server(opt: Opt, socket: TcpStream, stdin: &io::Stdin) -> Result<
 
                 // Restart the task
                 if cli_task.is_terminated() {
-                    cli_task.set(cli::simple_handle_input(&stdin).fuse())
+                    cli_task.set(cli::simple_handle_input(stdin).fuse())
                 }
             },
             () = heartbeat_task => {
@@ -332,10 +332,10 @@ fn attach_probe(chip: &str, probe_num: usize) -> Result<Session> {
 }
 
 fn load_loader(data: &[u8]) -> EndianRcSlice<LittleEndian> {
-    gimli::read::EndianRcSlice::new(Rc::from(&*data), gimli::LittleEndian)
+    gimli::read::EndianRcSlice::new(Rc::from(data), gimli::LittleEndian)
 }
 
-fn read_dwarf<'a, R: Reader<Offset = usize>>(
+fn read_dwarf<R: Reader<Offset = usize>>(
     path: &Path,
     load_loader: fn(data: &[u8]) -> R,
 ) -> Result<(Dwarf<R>, DebugFrame<R>)> {
@@ -370,7 +370,7 @@ fn read_dwarf<'a, R: Reader<Offset = usize>>(
     Ok((dwarf, frame_section))
 }
 
-pub fn get_current_unit<'a, R>(dwarf: &'a Dwarf<R>, pc: u32) -> Result<Unit<R>, Error>
+pub fn get_current_unit<R>(dwarf: &'_ Dwarf<R>, pc: u32) -> Result<Unit<R>, Error>
 where
     R: Reader<Offset = usize>,
 {
@@ -391,8 +391,8 @@ where
         error!("Found more then one unit in range {}", i);
     }
 
-    return match res {
+    match res {
         Some(u) => Ok(u),
         None => Err(Error::MissingUnitDie),
-    };
+    }
 }

@@ -344,10 +344,7 @@ fn get_command(matches: ArgMatches) -> Result<DebugRequest> {
         (BREAKPOINT_CMD, cmd) => match cmd.subcommand().unwrap() {
             (BKPT_SUB_CMD, sub_cmd) => DebugRequest::SetBreakpoint {
                 address: *sub_cmd.get_one::<u32>("address").unwrap(),
-                source_file: match sub_cmd.get_one::<String>("file") {
-                    Some(val) => Some(val.clone()),
-                    None => None,
-                },
+                source_file: sub_cmd.get_one::<String>("file").cloned(),
             },
             (CLEAR_SUB_CMD, sub_cmd) => DebugRequest::ClearBreakpoint {
                 address: *sub_cmd.get_one::<u32>("address").unwrap(),

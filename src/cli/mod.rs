@@ -47,8 +47,8 @@ fn match_debug_response(_stdout: &mut io::Stdout, response: DebugResponse) -> Re
         DebugResponse::Attach => handle_attach_response(),
         DebugResponse::Status { status, pc } => handle_status_response(status, pc),
         DebugResponse::Continue => handle_continue_response(),
-        DebugResponse::Step => handle_step_response(),
-        DebugResponse::Halt => handle_halt_response(),
+        DebugResponse::Step => (),
+        DebugResponse::Halt => (),
         DebugResponse::SetBinary => handle_set_binary_response(),
         DebugResponse::Flash => handle_flash_response(),
         DebugResponse::Reset => handle_reset_response(),
@@ -113,14 +113,6 @@ fn handle_status_response(status: CoreStatus, pc: Option<u32>) {
 
 fn handle_continue_response() {
     println!("Core is running");
-}
-
-fn handle_step_response() {
-    return ();
-}
-
-fn handle_halt_response() {
-    return ();
 }
 
 fn handle_set_binary_response() {
@@ -209,7 +201,7 @@ fn print_stack_frame(stack_frame: &StackFrame) {
         };
         println!("\t\t{} = {}", name, var.value_to_string());
     }
-    println!("");
+    println!();
 }
 
 fn handle_set_probe_number_response() {
@@ -261,7 +253,7 @@ fn handle_variables_response(variables: Vec<Variable>) {
     println!("Local variables:");
     for var in variables {
         handle_variable_response(var);
-        println!("");
+        println!();
     }
 }
 
@@ -301,11 +293,11 @@ fn handle_code_response(pc: u32, instructions: Vec<(u32, String)>) {
 
 fn handle_stack_response(stack_pointer: u32, stack: Vec<u32>) {
     println!("Current stack value:");
-    for i in 0..stack.len() {
+    for (i, value) in stack.iter().enumerate() {
         println!(
             "\t{:#010x}: {:#010x}",
             stack_pointer as usize + i * 4,
-            stack[i]
+            value
         );
     }
 }

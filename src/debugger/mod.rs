@@ -247,8 +247,8 @@ impl<R: Reader<Offset = usize>> DebugSession<R> {
                     todo!(); //self.trace_event(pc);
                 } else {
                     return Ok(Some(DebugEvent::Halted {
-                        pc: pc,
-                        reason: reason,
+                        pc,
+                        reason,
                         hit_breakpoint_ids: Some(hit_breakpoint_ids),
                     }));
                 }
@@ -305,12 +305,12 @@ impl<R: Reader<Offset = usize>> DebugSession<R> {
             let mut stack = vec![0u32; length];
             core.read_32(sp, &mut stack)?;
 
-            return Ok(DebugResponse::Stack {
+            Ok(DebugResponse::Stack {
                 stack_pointer: sp,
-                stack: stack,
-            });
+                stack,
+            })
         } else {
-            return Err(anyhow!("Core must be halted"));
+            Err(anyhow!("Core must be halted"))
         }
     }
 
@@ -336,13 +336,13 @@ impl<R: Reader<Offset = usize>> DebugSession<R> {
                 instructions.push((i.address() as u32, i.to_string()));
             }
 
-            return Ok(DebugResponse::Code {
+            Ok(DebugResponse::Code {
                 pc: pc_val,
-                instructions: instructions,
-            });
+                instructions,
+            })
         } else {
             warn!("Core is not halted, status: {:?}", status);
-            return Err(anyhow!("Core must be halted"));
+            Err(anyhow!("Core must be halted"))
         }
     }
 
@@ -416,9 +416,9 @@ impl<R: Reader<Offset = usize>> DebugSession<R> {
             let _bkpt = self.breakpoints.insert(address, breakpoint);
 
             info!("Breakpoint set at: 0x{:08x}", address);
-            return Ok(DebugResponse::SetBreakpoint);
+            Ok(DebugResponse::SetBreakpoint)
         } else {
-            return Err(anyhow!("All hardware breakpoints are already set"));
+            Err(anyhow!("All hardware breakpoints are already set"))
         }
     }
 
@@ -430,7 +430,7 @@ impl<R: Reader<Offset = usize>> DebugSession<R> {
         for register in register_file.registers() {
             let value = core.read_core_reg(register)?;
 
-            registers.push((format!("{}", register.name()), value));
+            registers.push((register.name().to_string(), value));
         }
 
         Ok(DebugResponse::Registers { registers })
@@ -444,7 +444,7 @@ impl<R: Reader<Offset = usize>> DebugSession<R> {
         match status.is_halted() {
             true => match &self.stack_trace {
                 Some(stack_trace) => {
-                    if stack_trace.len() < 1 {
+                    if stack_trace.is_empty() {
                         return Err(anyhow!("Variable {:?} not found", name));
                     }
                     let variable = match stack_trace[0].find_variable(name) {
@@ -481,9 +481,7 @@ impl<R: Reader<Offset = usize>> DebugSession<R> {
                         _ => stack_trace[0].variables.clone(),
                     };
 
-                    Ok(DebugResponse::Variables {
-                        variables: variables,
-                    })
+                    Ok(DebugResponse::Variables { variables })
                 }
                 None => {
                     self.set_stack_trace()?;
@@ -514,7 +512,7 @@ impl<R: Reader<Offset = usize>> DebugSession<R> {
         core.read_8(address, &mut buff)?;
 
         Ok(DebugResponse::Read {
-            address: address,
+            address,
             value: buff,
         })
     }
@@ -584,10 +582,7 @@ impl<R: Reader<Offset = usize>> DebugSession<R> {
             pc = Some(core.read_core_reg(core.registers().program_counter())?);
         }
 
-        Ok(DebugResponse::Status {
-            status: status,
-            pc: pc,
-        })
+        Ok(DebugResponse::Status { status, pc })
     }
 
     fn step_command(&mut self) -> Result<DebugResponse> {
@@ -755,7 +750,7 @@ impl<R: Reader<Offset = usize>> DebugSession<R> {
         id: i64,
     ) -> Result<()> {
         for child in &mut children {
-            if child.children.len() > 0 {
+            if !child.children.is_empty() {
                 child.id = self.id_gen.gen();
                 self.set_variables(variables, child.children.clone(), child.id)?;
             }
@@ -809,10 +804,10 @@ impl<R: Reader<Offset = usize>> DebugSession<R> {
                     // TODO: Make path os independent?
                     name: source_info.file.clone(),
                     path: match &source_info.directory {
-                        Some(dir) => match &source_info.file {
-                            Some(file) => Some(format!("{}/{}", dir, file)),
-                            None => None,
-                        },
+                        Some(dir) => source_info
+                            .file
+                            .as_ref()
+                            .map(|file| format!("{}/{}", dir, file)),
                         None => None,
                     },
                     source_reference: None,
@@ -881,10 +876,10 @@ impl<R: Reader<Offset = usize>> DebugSession<R> {
                 name: source_info.file.clone(),
                 path: match &source_info.directory {
                     // TODO: Make path os independent?
-                    Some(dir) => match &source_info.file {
-                        Some(file) => Some(format!("{}/{}", dir, file)),
-                        None => None,
-                    },
+                    Some(dir) => source_info
+                        .file
+                        .as_ref()
+                        .map(|file| format!("{}/{}", dir, file)),
                     None => None,
                 },
                 source_reference: None,
@@ -998,40 +993,34 @@ fn continue_fix(
     core: &mut probe_rs::Core,
     breakpoints: &HashMap<u32, Breakpoint>,
 ) -> Result<u32, probe_rs::Error> {
-    match core.status()? {
-        probe_rs::CoreStatus::Halted(r) => {
-            match r {
-                probe_rs::HaltReason::Breakpoint => {
-                    let pc = core.registers().program_counter();
-                    let pc_val = core.read_core_reg(pc)?;
+    if let probe_rs::CoreStatus::Halted(r) = core.status()? {
+        if r == probe_rs::HaltReason::Breakpoint {
+            let pc = core.registers().program_counter();
+            let pc_val = core.read_core_reg(pc)?;
 
-                    match read_bkpt(core, pc_val) {
-                        Ok(_) => {
-                            // For now we treat all breakpoints equally
-                            // NOTE: Increment with 2 because bkpt is 2 byte instruction.
-                            let step_pc = pc_val + 0x2; // TODO: Fix for other CPU types.
-                            core.write_core_reg(pc.into(), step_pc)?;
+            match read_bkpt(core, pc_val) {
+                Ok(_) => {
+                    // For now we treat all breakpoints equally
+                    // NOTE: Increment with 2 because bkpt is 2 byte instruction.
+                    let step_pc = pc_val + 0x2; // TODO: Fix for other CPU types.
+                    core.write_core_reg(pc.into(), step_pc)?;
 
-                            return Ok(step_pc);
-                        }
-                        Err(_) => {
-                            match breakpoints.get(&pc_val) {
-                                Some(_bkpt) => {
-                                    core.clear_hw_breakpoint(pc_val)?;
-                                    let pc = core.step()?.pc;
-                                    core.set_hw_breakpoint(pc_val)?;
-                                    return Ok(pc);
-                                }
-                                None => (),
-                            };
-                        }
-                    }
+                    return Ok(step_pc);
                 }
-                _ => (),
-            };
+                Err(_) => {
+                    match breakpoints.get(&pc_val) {
+                        Some(_bkpt) => {
+                            core.clear_hw_breakpoint(pc_val)?;
+                            let pc = core.step()?.pc;
+                            core.set_hw_breakpoint(pc_val)?;
+                            return Ok(pc);
+                        }
+                        None => (),
+                    };
+                }
+            }
         }
-        _ => (),
-    };
+    }
 
     Ok(core.step()?.pc)
 }
@@ -1106,7 +1095,7 @@ impl Variable {
     }
 
     fn value_to_string_recursive(&self, first: bool) -> String {
-        let mut result = format!("{}", self.value);
+        let mut result = self.value.to_string();
         if !first {
             match self.name.clone() {
                 Some(name) => result = format!("{}: {}", name, self.value),
@@ -1114,7 +1103,7 @@ impl Variable {
             };
         }
 
-        if self.children.len() > 0 {
+        if !self.children.is_empty() {
             result = format!("{} {{", result);
             for child in &self.children {
                 result = format!("{} {},", result, child.value_to_string_recursive(false));
@@ -1151,7 +1140,7 @@ impl Variable {
 
         //println!("p_variable: {:#?}\n\n", variable);
 
-        return Ok(variable);
+        Ok(variable)
     }
 
     fn evaluate<R: Reader<Offset = usize>>(
@@ -1173,10 +1162,7 @@ impl Variable {
                 self.evaluate(&pointer_type.value, source, core)?;
             }
             EvaluatorValue::VariantValue(variant_value) => {
-                let name = match variant_value.discr_value {
-                    Some(val) => Some(format!("{}", val)),
-                    None => None,
-                };
+                let name = variant_value.discr_value.map(|val| format!("{}", val));
                 let mut variable = Variable {
                     id: 0,
                     name,
@@ -1204,7 +1190,7 @@ impl Variable {
                             source,
                             core,
                         )?;
-                        let mut child = self.children.pop().ok_or(anyhow!("Error"))?;
+                        let mut child = self.children.pop().ok_or_else(|| anyhow!("Error"))?;
                         match &child.name {
                             Some(_) => (),
                             None => child.name = Some("< Variant >".to_owned()),
@@ -1443,7 +1429,7 @@ impl Variable {
             EvaluatorValue::LocationOutOfRange => self.value = "< LocationOutOfRange >".to_string(),
             EvaluatorValue::ZeroSize => self.value = "< OptimizedOut >".to_string(),
         };
-        return Ok(());
+        Ok(())
     }
 }
 
@@ -1498,7 +1484,7 @@ impl StackFrame {
                 None => (),
             };
         }
-        return None;
+        None
     }
 }
 
@@ -1525,7 +1511,7 @@ impl IdGen {
     pub fn gen(&mut self) -> i64 {
         let id = self.next_id;
         self.next_id += 1;
-        return id;
+        id
     }
 }
 
@@ -1540,5 +1526,5 @@ pub fn get_num_diff_children(children: &Vec<Variable>) -> (i64, i64) {
         };
     }
 
-    return (indexed_children, named_children);
+    (indexed_children, named_children)
 }
