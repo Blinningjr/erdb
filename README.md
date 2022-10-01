@@ -1,53 +1,42 @@
-# Embedded Rust Debugger
-This is a debugger for embedded rust code.
-It is in an early state so it doesn't work for a lot of different microcontrollers.
+# Embedded Rust Debugger (ERDB)
 
-This debugger is an example of how my debugging [library](https://github.com/Blinningjr/rust-debug) can be used.
+A debugger for rust on embedded systems.
 
-## Use
-Start by cloning the repository, then use it by running:
-```
-cargo run
-```
-or the following to start it as a DAP server:
-```
-cargo run -- -m server
-```
+ERDB currently only work on Linux.
+It is only tested on a `STM32F411RETx` dev board.
 
-Or alternatively you can install it as CLI tool.
+## Features
+* Flash target.
+* Continue, halt, step, and reset program.
+* Set and clear hardware breakpoints.
+* Print variables, registers, MCU status, and more.
+* Print stack trace.
+* Disassemble machine code.
 
-```
-cargo install --path .
+## Installation
 
-To get CLI options run:
-```
-embedded-rust-debugger --help
+```sh
+Cargo install --path .
 ```
 
-To see the available commands type `help` in the CLI.
+## Crate rust-debug
 
-
-### Example
-```
-cargo run -- --chip STM32F411RETx --work-directory /home/niklas/Desktop/exjobb/nucleo64-rtic-examples --elf-file /home/niklas/Desktop/exjobb/nucleo64-rtic-examples/target/thumbv7em-none-eabi/debug/nucleo-rtic-blinking-led
->> flash
-```
-
-Notice: You need first to compile the corresponding binary and flash it to the target (if the binary has been changed).
-
+ERDB is built using the debug crate [rust-debug](https://github.com/Blinningjr/rust-debug).
+Therefore, this is a great example of how to use that crate.
 
 ## License
+
 Licensed under either of
 
- * Apache License, Version 2.0
-   ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
- * MIT license
-   ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
+* Apache License, Version 2.0
+   ([LICENSE-APACHE](LICENSE-APACHE) or [http://www.apache.org/licenses/LICENSE-2.0](http://www.apache.org/licenses/LICENSE-2.0))
+* MIT license
+   ([LICENSE-MIT](LICENSE-MIT) or [http://opensource.org/licenses/MIT](http://opensource.org/licenses/MIT))
 
 at your option.
 
-
 ## Contribution
+
 Unless you explicitly state otherwise, any contribution intentionally submitted
 for inclusion in the work by you, as defined in the Apache-2.0 license, shall be
 dual licensed as above, without any additional terms or conditions.
