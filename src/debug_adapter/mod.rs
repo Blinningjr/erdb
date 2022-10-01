@@ -38,7 +38,7 @@ impl<W: Write + Unpin> DebugAdapter<W> {
         DebugAdapter {
             first_msg: true,
             seq: 0,
-            writer: writer,
+            writer,
         }
     }
 
@@ -221,7 +221,7 @@ impl<W: Write + Unpin> DebugAdapter<W> {
         debug_handler: &mut NewDebugHandler<R>,
         request: &Request,
     ) -> Result<bool> {
-        let args: LaunchRequestArguments = get_arguments(&request)?;
+        let args: LaunchRequestArguments = get_arguments(request)?;
         debug!("launch args: {:#?}", args);
         info!("program: {:?}", args.program);
 
@@ -269,7 +269,7 @@ impl<W: Write + Unpin> DebugAdapter<W> {
         debug_handler: &mut NewDebugHandler<R>,
         request: &Request,
     ) -> Result<bool> {
-        let args: AttachRequestArguments = get_arguments(&request)?;
+        let args: AttachRequestArguments = get_arguments(request)?;
         debug!("attach args: {:#?}", args);
         info!("program: {:?}", args.program);
 
@@ -377,7 +377,7 @@ impl<W: Write + Unpin> DebugAdapter<W> {
         debug_handler: &mut NewDebugHandler<R>,
         request: &Request,
     ) -> Result<bool> {
-        let args: debugserver_types::StackTraceArguments = get_arguments(&request)?;
+        let args: debugserver_types::StackTraceArguments = get_arguments(request)?;
         debug!("args: {:?}", args);
 
         // Get DAP stack frames
@@ -418,7 +418,7 @@ impl<W: Write + Unpin> DebugAdapter<W> {
         debug_handler: &mut NewDebugHandler<R>,
         request: &Request,
     ) -> Result<bool> {
-        let args: debugserver_types::ScopesArguments = get_arguments(&request)?;
+        let args: debugserver_types::ScopesArguments = get_arguments(request)?;
         debug!("args: {:?}", args);
 
         // Get stack trace
@@ -457,7 +457,7 @@ impl<W: Write + Unpin> DebugAdapter<W> {
         debug_handler: &mut NewDebugHandler<R>,
         request: &Request,
     ) -> Result<bool> {
-        let args: debugserver_types::VariablesArguments = get_arguments(&request)?;
+        let args: debugserver_types::VariablesArguments = get_arguments(request)?;
         debug!("args: {:?}", args);
 
         // Get stack trace
@@ -482,7 +482,7 @@ impl<W: Write + Unpin> DebugAdapter<W> {
             variables.push(debugserver_types::Variable {
                 evaluate_name: None, //Option<String>,
                 indexed_variables: Some(indexed_variables),
-                name: var.name.clone().unwrap_or("<unknown>".to_string()),
+                name: var.name.clone().unwrap_or_else(|| "<unknown>".to_string()),
                 named_variables: Some(named_variables),
                 presentation_hint: None,
                 type_: Some(var.type_.clone()),
@@ -540,7 +540,7 @@ impl<W: Write + Unpin> DebugAdapter<W> {
         debug_handler: &mut NewDebugHandler<R>,
         request: &Request,
     ) -> Result<bool> {
-        let args: DisconnectArguments = get_arguments(&request)?;
+        let args: DisconnectArguments = get_arguments(request)?;
         debug!("args: {:?}", args);
         // TODO: Stop the debuggee, if conditions are meet
 
@@ -638,14 +638,13 @@ impl<W: Write + Unpin> DebugAdapter<W> {
                 })?;
 
                 // Handle response
-                let breakpoints = match ack {
+                match ack {
                     DebugResponse::SetBreakpoints { breakpoints } => breakpoints,
                     _ => {
                         error!("Unreachable: {:#?}", ack);
                         vec![]
                     }
-                };
-                breakpoints
+                }
             }
             None => vec![],
         };
