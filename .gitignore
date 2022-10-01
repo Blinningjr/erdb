@@ -14,3 +14,7 @@ test.sh
 
 # Ignore vscode editor stuff
 .vscode/
+
+# Ignore test scripts
+run-test.sh
+run-optimized-test.sh
