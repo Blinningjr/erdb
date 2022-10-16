@@ -71,11 +71,11 @@ pub struct Opt {
     #[structopt(short = "v", long = "verbosity", default_value = "Off")]
     verbosity: LevelFilter,
 
-    /// Elf file path
-    #[structopt(short = "elf", long = "elf-file")]
-    elf_file_path: Option<PathBuf>,
+    /// Absolute file path  to binary/Elf file.
+    #[structopt(short = "bin", long = "binary-file-path")]
+    binary_file_path: Option<PathBuf>,
 
-    /// Current working directory
+    /// Current work directory absolute file path
     #[structopt(short = "wd", long = "work-directory")]
     work_directory: Option<String>,
 
@@ -127,6 +127,7 @@ async fn async_main() -> Result<()> {
         .filter_module("probe_rs", probe_rs_log_level)
         .init();
 
+    println!("Erdb is running, type \"help\" for information on commands");
     match opt.mode {
         Mode::Debug => cli_mode(opt).await,
         Mode::DebugAdapter => server_mode(opt).await,

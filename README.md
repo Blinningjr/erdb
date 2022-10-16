@@ -1,8 +1,8 @@
-# Embedded Rust Debugger (ERDB)
+# Embedded Rust Debugger (erdb)
 
 A debugger for rust on embedded systems.
 
-ERDB currently only work on Linux.
+Erdb currently only work on Linux.
 It is only tested on a `STM32F411RETx` dev board.
 
 ## Features
@@ -19,9 +19,56 @@ It is only tested on a `STM32F411RETx` dev board.
 cargo install --path .
 ```
 
+## Run
+
+Erdb has the two following modes:
+
+* CLI mode - Starts a TUI in the terminal.
+* Server mode - Starts a DAP server.
+
+Erdb will start in CLI mode by default.
+More information on the two modes in the subsections bellow.
+
+### CLI Mode
+
+Start erdb with the following command:
+
+```sh
+erdb
+```
+
+Erdb requires the $3$ following configurations:
+ * `chip` - Type of chip, example `STM32F411RETx`.
+* `work-directory` - The absolute path to the root of the project directory.
+* `elf-file` - The absolute path to the compiled binary/elf file.
+
+Which can be set using the `config` command.
+
+
+But, the easiest way to use erdb, is to make a shell script that starts erdb and sets all $3$ configurations. It would look something like this:
+
+```bash
+#!/bin/bash
+erdb --chip STM32F411RETx \
+--work-directory /home/niklas/exjobb/nucleo64-rtic-examples \
+--binary-file-path /home/niklas/exjobb/nucleo64-rtic-examples/target/thumbv7em-none-eabi/debug/nucleo-rtic-blinking-led
+```
+
+### Server Mode
+
+To start erdb as a DAP server use the following command:
+
+```sh
+erdb -m server
+```
+
+It is recommended to use flag `-v` for more server logs.
+
+Erdb use port `8800` by default, however this can be changed with the flag `-p <port>`.
+
 ## Crate rust-debug
 
-ERDB is built using the debug crate [rust-debug](https://github.com/Blinningjr/rust-debug).
+Erdb is built using the debug crate [rust-debug](https://github.com/Blinningjr/rust-debug).
 Therefore, this is a great example of how to use that crate.
 
 ## License

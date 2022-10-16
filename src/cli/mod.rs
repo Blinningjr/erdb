@@ -1,4 +1,5 @@
 mod cli_commands;
+use async_std::io::WriteExt;
 use cli_commands::{parse_string_simple_cli, parse_string_to_erdb_request};
 
 use async_std::io;
@@ -15,6 +16,11 @@ use probe_rs::CoreStatus;
 
 pub async fn handle_input(stdin: &io::Stdin) -> Result<DebugRequest> {
     loop {
+        print!("erdb> ");
+        match io::stdout().flush().await {
+            Ok(_) => (),
+            Err(err) => error!("{}", err),
+        };
         let mut line = "ERDB ".to_owned();
         stdin.read_line(&mut line).await?;
         match parse_string_to_erdb_request(line)? {
@@ -26,6 +32,11 @@ pub async fn handle_input(stdin: &io::Stdin) -> Result<DebugRequest> {
 
 pub async fn simple_handle_input(stdin: &io::Stdin) -> Result<bool> {
     // Read next line asynchronously
+    print!("erdb> ");
+    match io::stdout().flush().await {
+        Ok(_) => (),
+        Err(err) => error!("{}", err),
+    };
     let mut line = "ERDB ".to_owned();
     stdin.read_line(&mut line).await?;
     parse_string_simple_cli(line)
