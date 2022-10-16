@@ -42,7 +42,7 @@ pub enum DebugResponse {
     ClearBreakpoint,
     ClearAllBreakpoints,
     Code {
-        pc: u32,
+        pc: u64,
         instructions: Vec<(u32, String)>,
     },
     Stack {

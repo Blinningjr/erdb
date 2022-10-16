@@ -1,6 +1,6 @@
 [package]
 name = "erdb"
-version = "0.2.1"
+version = "0.2.2"
 authors = ["Niklas Lundberg"]
 license = "MIT OR Apache-2.0"
 edition = "2021"
@@ -12,7 +12,7 @@ keywords = ["debugger", "debugging", "debug"]
 categories = ["development-tools::debugging"]
 
 [dependencies]
-probe-rs = "0.12"
+probe-rs = "0.13"
 gimli = "0.26"
 object = "0.29"
 memmap = "0.7"
