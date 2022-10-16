@@ -162,7 +162,7 @@ fn target_commands() -> Command {
 
 fn binary_command() -> Command {
     Command::new(BINARY_SUB_CMD)
-        .about("Set file path to binary")
+        .about("Set absolute file path to binary/Elf file")
         .alias("b")
         .arg(
             arg!([file] "Binary file path")
@@ -173,7 +173,7 @@ fn binary_command() -> Command {
 
 fn chip_command() -> Command {
     Command::new(CHIP_SUB_CMD)
-        .about("Set chip model")
+        .about("Set type of chip")
         .alias("c")
         .arg(
             arg!([chip] "Chip name")
@@ -196,7 +196,7 @@ fn probe_command() -> Command {
 
 fn work_directory_command() -> Command {
     Command::new(WORK_DIR_SUB_CMD)
-        .about("Specify source code work directory")
+        .about("Set current work directory absolute file path")
         .alias("wd")
         .arg_required_else_help(true)
         .arg(arg!([dir] "Work directory path").value_parser(value_parser!(String)))

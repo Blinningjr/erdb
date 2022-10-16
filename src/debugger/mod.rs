@@ -49,7 +49,7 @@ impl<R: Reader<Offset = usize>> NewDebugHandler<R> {
         Ok(match request {
             DebugRequest::Exit => DebugResponse::Exit,
             DebugRequest::SetBinary { path } => {
-                self.config.elf_file_path = Some(path);
+                self.config.binary_file_path = Some(path);
                 DebugResponse::SetBinary
             }
             DebugRequest::SetProbeNumber { number } => {
@@ -73,7 +73,7 @@ impl<R: Reader<Offset = usize>> NewDebugHandler<R> {
                         }
                     } else {
                         self.session = Some(DebugSession::new(
-                            match self.config.elf_file_path.clone() {
+                            match self.config.binary_file_path.clone() {
                                 Some(val) => val,
                                 None => {
                                     unreachable!();

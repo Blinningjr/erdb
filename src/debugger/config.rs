@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 pub struct Config {
-    pub elf_file_path: Option<PathBuf>,
+    pub binary_file_path: Option<PathBuf>,
     pub chip: Option<String>,
     pub work_directory: Option<String>,
     pub probe_num: usize,
@@ -10,7 +10,7 @@ pub struct Config {
 impl Config {
     pub fn new(opt: super::Opt) -> Config {
         Config {
-            elf_file_path: opt.elf_file_path,
+            binary_file_path: opt.binary_file_path,
             chip: opt.chip,
             work_directory: opt.work_directory,
             probe_num: 0,
@@ -18,7 +18,7 @@ impl Config {
     }
 
     pub fn is_missing_config(&self) -> bool {
-        self.elf_file_path.is_none() || self.chip.is_none() || self.work_directory.is_none()
+        self.binary_file_path.is_none() || self.chip.is_none() || self.work_directory.is_none()
     }
 
     pub fn missing_config_message(&self) -> String {
@@ -27,7 +27,7 @@ impl Config {
         }
 
         let mut error = "Missing required configurations:".to_owned();
-        if self.elf_file_path.is_none() {
+        if self.binary_file_path.is_none() {
             error = format!("{}\n\t{}", error, "elf file path");
         }
         if self.chip.is_none() {
