@@ -291,7 +291,6 @@ impl<R: Reader<Offset = usize>> DebugSession<R> {
 
             let fp_reg =
                 probe_rs::RegisterId::from(core.registers().frame_pointer());
-            info!("fp reg {} == 7", fp_reg.0); // reg 7 seams to be the base stack address.
             let fp: u32 = core.read_core_reg(fp_reg)?; 
             let sp = core.read_core_reg(sp_reg)?;
 
