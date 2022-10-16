@@ -19,7 +19,7 @@ It is only tested on a `STM32F411RETx` dev board.
 cargo install --path .
 ```
 
-## Using
+## Run
 
 Erdb has the two following modes:
 
@@ -33,7 +33,7 @@ More information on the two modes in the subsections bellow.
 
 Start erdb with the following command:
 
-```shell
+```sh
 erdb
 ```
 
@@ -47,7 +47,7 @@ Which can be set using the `config` command.
 
 But, the easiest way to use erdb, is to make a shell script that starts erdb and sets all $3$ configurations. It would look something like this:
 
-```shell
+```bash
 #!/bin/bash
 erdb --chip STM32F411RETx \
 --work-directory /home/niklas/exjobb/nucleo64-rtic-examples \
@@ -56,7 +56,15 @@ erdb --chip STM32F411RETx \
 
 ### Server Mode
 
-TODO
+To start erdb as a DAP server use the following command:
+
+```sh
+erdb -m server
+```
+
+It is recommended to use flag `-v` for more server logs.
+
+Erdb use port `8800` by default, however this can be changed with the flag `-p <port>`.
 
 ## Crate rust-debug
 
