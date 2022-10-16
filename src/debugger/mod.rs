@@ -147,12 +147,9 @@ impl<R: Reader<Offset = usize>> DebugSession<R> {
 
         let (pc_reg, link_reg, sp_reg) = {
             let core = session.core(0)?;
-            let pc_reg =
-                probe_rs::RegisterId::from(core.registers().program_counter()).0 as usize;
-            let link_reg =
-                probe_rs::RegisterId::from(core.registers().return_address()).0 as usize;
-            let sp_reg =
-                probe_rs::RegisterId::from(core.registers().stack_pointer()).0 as usize;
+            let pc_reg = probe_rs::RegisterId::from(core.registers().program_counter()).0 as usize;
+            let link_reg = probe_rs::RegisterId::from(core.registers().return_address()).0 as usize;
+            let sp_reg = probe_rs::RegisterId::from(core.registers().stack_pointer()).0 as usize;
             (pc_reg, link_reg, sp_reg)
         };
         let mut registers = Registers::default();
@@ -286,12 +283,10 @@ impl<R: Reader<Offset = usize>> DebugSession<R> {
         let status = core.status()?;
 
         if status.is_halted() {
-            let sp_reg =
-                probe_rs::RegisterId::from(core.registers().stack_pointer());
+            let sp_reg = probe_rs::RegisterId::from(core.registers().stack_pointer());
 
-            let fp_reg =
-                probe_rs::RegisterId::from(core.registers().frame_pointer());
-            let fp: u32 = core.read_core_reg(fp_reg)?; 
+            let fp_reg = probe_rs::RegisterId::from(core.registers().frame_pointer());
+            let fp: u32 = core.read_core_reg(fp_reg)?;
             let sp = core.read_core_reg(sp_reg)?;
 
             if fp < sp {

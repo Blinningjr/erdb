@@ -9,7 +9,7 @@ use log::info;
 
 use rust_debug::utils::in_ranges;
 
-use probe_rs::{Probe, Session, Permissions};
+use probe_rs::{Permissions, Probe, Session};
 
 use object::{Object, ObjectSection};
 
