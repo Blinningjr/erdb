@@ -287,7 +287,7 @@ impl<R: Reader<Offset = usize>> DebugSession<R> {
 
             let fp_reg = probe_rs::RegisterId::from(core.registers().frame_pointer());
             let fp: u32 = core.read_core_reg(fp_reg)?;
-            let sp = core.read_core_reg(sp_reg)?;
+            let sp: u32 = core.read_core_reg(sp_reg)?;
 
             if fp < sp {
                 // The previous stack pointer is less then current.

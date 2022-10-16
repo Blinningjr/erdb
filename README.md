@@ -37,6 +37,8 @@ Start erdb with the following command:
 erdb
 ```
 
+> **_NOTE:_** Almost all sub commands have an alias, which is usually first letter of each word in the sub command. Examples: `target c` = `target continue`, `info st = info stack-trace`.
+
 Erdb requires the $3$ following configurations:
  * `chip` - Type of chip, example `STM32F411RETx`.
 * `work-directory` - The absolute path to the root of the project directory.
