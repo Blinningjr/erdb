@@ -148,11 +148,11 @@ impl<R: Reader<Offset = usize>> DebugSession<R> {
         let (pc_reg, link_reg, sp_reg) = {
             let core = session.core(0)?;
             let pc_reg =
-                probe_rs::CoreRegisterAddress::from(core.registers().program_counter()).0 as usize;
+                probe_rs::RegisterId::from(core.registers().program_counter()).0 as usize;
             let link_reg =
-                probe_rs::CoreRegisterAddress::from(core.registers().return_address()).0 as usize;
+                probe_rs::RegisterId::from(core.registers().return_address()).0 as usize;
             let sp_reg =
-                probe_rs::CoreRegisterAddress::from(core.registers().stack_pointer()).0 as usize;
+                probe_rs::RegisterId::from(core.registers().stack_pointer()).0 as usize;
             (pc_reg, link_reg, sp_reg)
         };
         let mut registers = Registers::default();
@@ -286,13 +286,16 @@ impl<R: Reader<Offset = usize>> DebugSession<R> {
         let status = core.status()?;
 
         if status.is_halted() {
-            let sp_reg: u16 =
-                probe_rs::CoreRegisterAddress::from(core.registers().stack_pointer()).0;
+            let sp_reg =
+                probe_rs::RegisterId::from(core.registers().stack_pointer());
 
-            let sf = core.read_core_reg(7)?; // reg 7 seams to be the base stack address.
+            let fp_reg =
+                probe_rs::RegisterId::from(core.registers().frame_pointer());
+            info!("fp reg {} == 7", fp_reg.0); // reg 7 seams to be the base stack address.
+            let fp: u32 = core.read_core_reg(fp_reg)?; 
             let sp = core.read_core_reg(sp_reg)?;
 
-            if sf < sp {
+            if fp < sp {
                 // The previous stack pointer is less then current.
                 // This happens when there is no stack.
                 return Ok(DebugResponse::Stack {
@@ -301,9 +304,9 @@ impl<R: Reader<Offset = usize>> DebugSession<R> {
                 });
             }
 
-            let length = (((sf - sp) + 4 - 1) / 4) as usize;
+            let length = (((fp - sp) + 4 - 1) / 4) as usize;
             let mut stack = vec![0u32; length];
-            core.read_32(sp, &mut stack)?;
+            core.read_32(sp.into(), &mut stack)?;
 
             Ok(DebugResponse::Stack {
                 stack_pointer: sp,
@@ -361,12 +364,12 @@ impl<R: Reader<Offset = usize>> DebugSession<R> {
 
         match self.breakpoints.remove(&address) {
             Some(_bkpt) => {
-                core.clear_hw_breakpoint(address)?;
+                core.clear_hw_breakpoint(address.into())?;
                 info!("Breakpoint cleared from: 0x{:08x}", address);
                 Ok(DebugResponse::ClearBreakpoint)
             }
             None => {
-                core.clear_hw_breakpoint(address)?;
+                core.clear_hw_breakpoint(address.into())?;
                 Err(anyhow!("Can't remove hardware breakpoint at {}", address))
             }
         }
@@ -398,10 +401,10 @@ impl<R: Reader<Offset = usize>> DebugSession<R> {
         };
 
         let num_bkpt = self.breakpoints.len() as u32;
-        let tot_bkpt = core.get_available_breakpoint_units()?;
+        let tot_bkpt = core.available_breakpoint_units()?;
 
         if num_bkpt < tot_bkpt {
-            core.set_hw_breakpoint(address)?;
+            core.set_hw_breakpoint(address.into())?;
 
             let breakpoint = Breakpoint {
                 id: Some(address as i64),
@@ -427,7 +430,7 @@ impl<R: Reader<Offset = usize>> DebugSession<R> {
         let register_file = core.registers();
 
         let mut registers = vec![];
-        for register in register_file.registers() {
+        for register in register_file.platform_registers() {
             let value = core.read_core_reg(register)?;
 
             registers.push((register.name().to_string(), value));
@@ -509,7 +512,7 @@ impl<R: Reader<Offset = usize>> DebugSession<R> {
     fn read_command(&mut self, address: u32, byte_size: usize) -> Result<DebugResponse> {
         let mut core = self.session.core(0)?;
         let mut buff: Vec<u8> = vec![0; byte_size];
-        core.read_8(address, &mut buff)?;
+        core.read_8(address.into(), &mut buff)?;
 
         Ok(DebugResponse::Read {
             address,
@@ -664,9 +667,9 @@ impl<R: Reader<Offset = usize>> DebugSession<R> {
                     };
 
                     // Set breakpoint
-                    if self.breakpoints.len() < core.get_available_breakpoint_units()? as usize {
+                    if self.breakpoints.len() < core.available_breakpoint_units()? as usize {
                         self.breakpoints.insert(address as u32, breakpoint.clone());
-                        core.set_hw_breakpoint(address as u32)?;
+                        core.set_hw_breakpoint(address)?;
                     } else {
                         breakpoint.verified = false;
                     }
@@ -979,7 +982,7 @@ fn read_cycle_counter(core: &mut probe_rs::Core) -> Result<(u32, u32), probe_rs:
 
 fn read_bkpt(core: &mut probe_rs::Core, pc_val: u32) -> Result<u8, probe_rs::Error> {
     let mut code = [0u8; 2];
-    core.read_8(pc_val, &mut code)?;
+    core.read_8(pc_val.into(), &mut code)?;
     if code[1] == 0b1011_1110 {
         // 0b1011_1110 is the binary encoding of the BKPT #NR instruction
         // code[0] holds the breakpoint number #NR (0..255)
@@ -1010,10 +1013,10 @@ fn continue_fix(
                 Err(_) => {
                     match breakpoints.get(&pc_val) {
                         Some(_bkpt) => {
-                            core.clear_hw_breakpoint(pc_val)?;
+                            core.clear_hw_breakpoint(pc_val.into())?;
                             let pc = core.step()?.pc;
-                            core.set_hw_breakpoint(pc_val)?;
-                            return Ok(pc);
+                            core.set_hw_breakpoint(pc_val.into())?;
+                            return Ok(pc as u32);
                         }
                         None => (),
                     };
@@ -1022,7 +1025,7 @@ fn continue_fix(
         }
     }
 
-    Ok(core.step()?.pc)
+    Ok(core.step()?.pc as u32)
 }
 
 pub struct MyCore<'a> {
@@ -1032,7 +1035,7 @@ pub struct MyCore<'a> {
 impl MemoryAccess for MyCore<'_> {
     fn get_address(&mut self, address: &u32, num_bytes: usize) -> Option<Vec<u8>> {
         let mut buff = vec![0u8; num_bytes];
-        match self.core.read_8(*address, &mut buff) {
+        match self.core.read_8((*address).into(), &mut buff) {
             Ok(_) => (),
             Err(_) => return None,
         };
@@ -1042,9 +1045,9 @@ impl MemoryAccess for MyCore<'_> {
 
 fn read_and_add_registers(core: &mut probe_rs::Core, registers: &mut Registers) -> Result<()> {
     let register_file = core.registers();
-    for register in register_file.registers() {
+    for register in register_file.platform_registers() {
         let value = core.read_core_reg(register)?;
-        registers.add_register_value(probe_rs::CoreRegisterAddress::from(register).0, value);
+        registers.add_register_value(probe_rs::RegisterId::from(register).0, value);
     }
 
     Ok(())
@@ -1341,7 +1344,7 @@ impl Variable {
                         };
                     }
                     let mut raw_string = vec![0u8; num_bytes];
-                    core.read_8(address, &mut raw_string)?;
+                    core.read_8(address.into(), &mut raw_string)?;
                     match str::from_utf8(raw_string.as_ref()) {
                         Ok(v) => self.value = format!("{:?}", v),
                         Err(_err) => {

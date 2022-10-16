@@ -291,11 +291,11 @@ fn handle_clear_all_breakpoints_response() {
     println!("All hardware breakpoints cleared");
 }
 
-fn handle_code_response(pc: u32, instructions: Vec<(u32, String)>) {
+fn handle_code_response(pc: u64, instructions: Vec<(u32, String)>) {
     println!("Assembly Code");
     for (address, asm) in instructions {
         let mut spacer = "  ";
-        if address == pc {
+        if <u32 as Into<u64>>::into(address) == pc {
             spacer = "> ";
         }
         println!("{}{}", spacer, asm);

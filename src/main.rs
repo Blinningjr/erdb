@@ -9,7 +9,7 @@ use log::info;
 
 use rust_debug::utils::in_ranges;
 
-use probe_rs::{Probe, Session};
+use probe_rs::{Probe, Session, Permissions};
 
 use object::{Object, ObjectSection};
 
@@ -326,7 +326,7 @@ fn attach_probe(chip: &str, probe_num: usize) -> Result<Session> {
 
     // Attach to a chip.
     let session = probe
-        .attach_under_reset(chip)
+        .attach_under_reset(chip, Permissions::default())
         .context("Failed to attach probe to target")?;
 
     Ok(session)
