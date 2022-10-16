@@ -127,6 +127,7 @@ async fn async_main() -> Result<()> {
         .filter_module("probe_rs", probe_rs_log_level)
         .init();
 
+    println!("Erdb is running, type \"help\" for information on commands");
     match opt.mode {
         Mode::Debug => cli_mode(opt).await,
         Mode::DebugAdapter => server_mode(opt).await,
