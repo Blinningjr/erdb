@@ -67,10 +67,6 @@ pub struct Opt {
     #[structopt(short = "m", long = "mode", default_value = "Debug")]
     mode: Mode,
 
-    /// Set log level
-    #[structopt(short = "v", long = "verbosity", default_value = "Off")]
-    verbosity: LevelFilter,
-
     /// Absolute file path  to binary/Elf file.
     #[structopt(short = "bin", long = "binary-file-path")]
     binary_file_path: Option<PathBuf>,
@@ -94,21 +90,7 @@ pub struct Opt {
 }
 
 fn main() -> Result<()> {
-    let future = async_main();
-    block_on(future)
-}
-
-async fn async_main() -> Result<()> {
     let opt = Opt::from_args();
-
-    // Setup log
-    let log_level = opt.verbosity;
-    let probe_rs_log_level = match log_level {
-        LevelFilter::Debug => LevelFilter::Info,
-        LevelFilter::Trace => LevelFilter::Info,
-        LevelFilter::Info => LevelFilter::Warn,
-        _ => log_level,
-    };
 
     let mut builder = Builder::from_default_env();
     builder
@@ -123,10 +105,14 @@ async fn async_main() -> Result<()> {
                 record.args()
             )
         })
-        .filter(None, log_level)
-        .filter_module("probe_rs", probe_rs_log_level)
+        .filter_module("probe_rs", LevelFilter::Info)
         .init();
 
+    let future = async_main(opt);
+    block_on(future)
+}
+
+async fn async_main(opt: Opt) -> Result<()> {
     println!("Erdb is running, type \"help\" for information on commands");
     match opt.mode {
         Mode::Debug => cli_mode(opt).await,
