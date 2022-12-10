@@ -22,7 +22,7 @@ use anyhow::{anyhow, Context, Result};
 
 use chrono::Local;
 use env_logger::*;
-use log::{error, LevelFilter};
+use log::{error, LevelFilter, debug};
 
 // use async_std::{io, task, io::ReadExt};
 use async_std::io::BufReader;
@@ -37,6 +37,15 @@ use std::rc::Rc;
 use std::str::FromStr;
 use std::time::Duration;
 use std::{borrow, fs};
+
+
+use std::thread;
+use rustyline::{Editor, ExternalPrinter};
+
+use std::sync::mpsc;
+
+
+
 
 #[derive(Debug, Clone)]
 enum Mode {
@@ -90,8 +99,10 @@ pub struct Opt {
 }
 
 fn main() -> Result<()> {
+    // Read CLI arguments
     let opt = Opt::from_args();
 
+    // Setup logging
     let mut builder = Builder::from_default_env();
     builder
         .format(|buf, record| {
@@ -108,9 +119,44 @@ fn main() -> Result<()> {
         .filter_module("probe_rs", LevelFilter::Info)
         .init();
 
-    let future = async_main(opt);
-    block_on(future)
+    
+    // Create readline and external printer.
+    let mut rl = Editor::<()>::new()?;
+    let mut printer = rl.create_external_printer()?;
+   
+    // Setup channel
+    let (tx, rx) = mpsc::channel();
+  
+    // Start cli thread
+    let cli_thread = thread::Builder::new().name("thread1".to_string()).spawn(move || {
+        debug!("CLI thread started");
+
+        loop { 
+            let line = rl.readline("> ").unwrap();
+
+            // TODO: Try to parse the command
+
+            // If valid command then add line to history .
+            rl.add_history_entry(line.as_str());
+            tx.send(line.clone()).unwrap();
+            if line == "exit" {
+                break;
+            }
+        }
+        debug!("CLI thread stopped");
+    }).unwrap();
+
+
+    while let Ok(received) = rx.recv() {
+        println!("Got: {}", received);
+    }
+
+    cli_thread.join().unwrap();
+    Ok(())
+   // let future = async_main(opt);
+   // block_on(future)
 }
+
 
 async fn async_main(opt: Opt) -> Result<()> {
     println!("Erdb is running, type \"help\" for information on commands");

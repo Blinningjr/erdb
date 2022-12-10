@@ -30,4 +30,8 @@ futures = "0.3"
 async-std = "1.12"
 clap = { version = "4.0", features = ["derive", "cargo"] }
 shellwords = "1.1.0"
-rust-debug = "0.1"
+rustyline = "10.0.0"
+
+# rust-debug = "0.1"
+rust-debug = { path = "../rust-debug" }
+
